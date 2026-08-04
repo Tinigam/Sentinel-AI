@@ -1,0 +1,36 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel}
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://sentinel:sentinel@db:5432/sentinel_ai}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      RSS_FEED_URL: ${RSS_FEED_URL:-https://news.google.com/rss/search?q=%E5%8E%9F%E7%A5%9E+OR+%E5%B4%A9%E5%9D%8F%EF%BC%9A%E6%98%9F%E7%A9%B9%E9%93%81%E9%81%93+OR+%E7%BB%9D%E5%8C%BA%E9%9B%B6+OR+%E9%B8%A3%E6%BD%AE+OR+%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F+OR+%E7%BB%88%E6%9C%AB%E5%9C%B0+OR+%E5%B0%91%E5%A5%B3%E5%89%8D%E7%BA%BF2+OR+%E7%8E%8B%E8%80%85%E8%8D%A3%E8%80%80+OR+%E7%AC%AC%E4%BA%94%E4%BA%BA%E6%A0%BC+OR+%E6%97%A0%E7%95%8F%E5%A5%91%E7%BA%A6+OR+%E4%B8%89%E8%A7%92%E6%B4%B2%E8%A1%8C%E5%8A%A8&hl=zh-CN&gl=CN&ceid=CN%3Azh-Hans}
+      RSS_SOURCE_NAME: ${RSS_SOURCE_NAME:-Google News · Target Games}
+      INGEST_API_KEY: ${INGEST_API_KEY:-local-dev-key}
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes: ["./config:/app/config:ro"]
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports: ["5173:5173"]
+    depends_on: [backend]
+volumes:
+  postgres_data:

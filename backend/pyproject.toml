@@ -1,0 +1,17 @@
+[project]
+name = "sentinel-ai-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["alembic>=1.14,<2", "feedparser>=6.0,<7", "fastapi>=0.115,<1", "pgvector>=0.3,<1", "psycopg[binary]>=3.2,<4", "pydantic-settings>=2.7,<3", "pyyaml>=6.0,<7", "sqlalchemy>=2.0,<3", "uvicorn[standard]>=0.32,<1"]
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "ruff>=0.8,<1"]
+[tool.ruff]
+line-length = 100
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

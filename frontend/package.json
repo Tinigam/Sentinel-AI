@@ -1,0 +1,1 @@
+{"name":"sentinel-ai-frontend","version":"0.1.0","private":true,"scripts":{"dev":"vite --host 0.0.0.0","build":"tsc --noEmit && vite build"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{"@types/react":"latest","@types/react-dom":"latest","typescript":"latest"}}

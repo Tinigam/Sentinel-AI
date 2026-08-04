@@ -1,0 +1,12 @@
+topics:
+  - {slug: genshin-impact, display_name: 原神, aliases: [Genshin Impact], keywords: [原神, Genshin, 米哈游]}
+  - {slug: honkai-star-rail, display_name: 崩坏：星穹铁道, aliases: [Honkai Star Rail, 星穹铁道], keywords: [崩坏：星穹铁道, 星穹铁道]}
+  - {slug: zenless-zone-zero, display_name: 绝区零, aliases: [Zenless Zone Zero], keywords: [绝区零, Zenless Zone Zero]}
+  - {slug: wuthering-waves, display_name: 鸣潮, aliases: [Wuthering Waves], keywords: [鸣潮, Wuthering Waves, 库洛]}
+  - {slug: arknights, display_name: 明日方舟, aliases: [Arknights], keywords: [明日方舟, Arknights, 鹰角]}
+  - {slug: arknights-endfield, display_name: 明日方舟：终末地, aliases: [Arknights Endfield, 终末地], keywords: [明日方舟：终末地, 终末地]}
+  - {slug: girls-frontline-2-exilium, display_name: 少女前线2：追放, aliases: [Girls Frontline 2, 少前2], keywords: [少女前线2, 追放]}
+  - {slug: honor-of-kings, display_name: 王者荣耀, aliases: [Honor of Kings], keywords: [王者荣耀]}
+  - {slug: identity-v, display_name: 第五人格, aliases: [Identity V], keywords: [第五人格]}
+  - {slug: valorant, display_name: 无畏契约, aliases: [VALORANT], keywords: [无畏契约, VALORANT]}
+  - {slug: delta-force, display_name: 三角洲行动, aliases: [Delta Force], keywords: [三角洲行动, Delta Force]}
