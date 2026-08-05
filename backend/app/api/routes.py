@@ -11,6 +11,8 @@ from app.models.entities import Article, ArticleSentiment, ArticleTopic, Topic
 from app.services.indexing import index_relevant_articles
 from app.services.ingestion import ingest_rss
 from app.services.retrieval import hybrid_search
+from app.schemas import AskRequest
+from app.services.rag import answer_question
 from app.services.sentiment import MODEL_NAME, classify_unprocessed
 
 router = APIRouter()
@@ -220,3 +222,13 @@ def classify(
 ) -> dict:
     require_ingest_key(x_ingest_key)
     return {"status": "completed", "classified": classify_unprocessed(db)}
+
+
+@router.post("/ask")
+def ask(request: AskRequest, db: Session = Depends(get_db)) -> dict:
+    return answer_question(
+        db,
+        question=request.question,
+        topic=request.topic,
+        sentiment=request.sentiment,
+    )
