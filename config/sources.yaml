@@ -21,3 +21,19 @@ rss_sources:
     source_type: media
     trust_tier: aggregated
     query: 'site:3dmgame.com (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+official_pages:
+  - name: Honkai Star Rail official news
+    source_type: official
+    trust_tier: verified
+    topic: honkai-star-rail
+    url: https://sr.mihoyo.com/news?nav=news&type=news
+  - name: Arknights official news
+    source_type: official
+    trust_tier: verified
+    topic: arknights
+    url: https://ak.hypergryph.com/news
+  - name: Arknights Endfield official news
+    source_type: official
+    trust_tier: verified
+    topic: arknights-endfield
+    url: https://endfield.gryphline.com/zh-tw/news

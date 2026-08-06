@@ -33,3 +33,6 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/v1/index
 ```
 
 The first command recomputes article types and creates missing sentiments for eligible articles. The second removes ineligible chunks and rebuilds embeddings for eligible, topic-linked articles.
+## Official page discovery
+
+official_pages supports static public announcement lists. Each configured page has a first-party URL, a topic, and official / erified provenance metadata. The collector intentionally accepts only same-domain announcement-like links; dynamic sites that render no links are skipped rather than bypassed.
