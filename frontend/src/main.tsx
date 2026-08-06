@@ -10,7 +10,7 @@ type Trend = { date: string; article_count: number; negative_count: number };
 type AskAnswer = { answer: string; insufficient_evidence: boolean; sources: { id: string; title: string; source: string; url: string; snippet: string }[] };
 const api = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-function App() {
+export function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [trends, setTrends] = useState<Trend[]>([]);
   const [news, setNews] = useState<Article[]>([]);
@@ -50,4 +50,5 @@ function App() {
     <section><h2>最新新闻</h2><div className="list">{news.map((article) => <article key={article.id}><div><h3><a href={article.original_url} target="_blank" rel="noreferrer">{article.title}</a></h3><p>{article.summary || "暂无摘要"}</p><small>{article.source_name} · {article.published_at ? new Date(article.published_at).toLocaleDateString("zh-CN") : "日期未知"}</small></div><aside>{article.topics.map((topic) => <span key={topic.slug}>{topic.display_name}</span>)}{article.sentiments.map((item) => <em className={item.label} key={item.topic_slug}>{item.label === "negative" ? "负面" : item.label === "positive" ? "正面" : "中性"}</em>)}</aside></article>)}</div>{!news.length && !error && <p>暂无新闻。调用 <code>POST /api/v1/ingest</code> 导入 RSS 内容。</p>}</section>
   </main>;
 }
-createRoot(document.getElementById("root")!).render(<App />);
+const root = document.getElementById("root");
+if (root) createRoot(root).render(<App />);

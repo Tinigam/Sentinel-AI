@@ -2,7 +2,7 @@ import hashlib
 import html
 import re
 from datetime import UTC, datetime
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import feedparser
 import yaml
@@ -40,75 +40,103 @@ def sync_topics(db: Session) -> list[Topic]:
     return topics
 
 
-def ingest_rss(db: Session) -> dict[str, int]:
+def google_news_feed_url(query: str) -> str:
+    return "https://news.google.com/rss/search?" + urlencode(
+        {"q": query, "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans"}
+    )
+
+
+def load_rss_sources() -> list[dict[str, str]]:
     settings = get_settings()
-    source = db.scalar(select(Source).where(Source.feed_url == settings.rss_feed_url))
+    if not settings.sources_config_path.exists():
+        return [{"name": settings.rss_source_name, "feed_url": settings.rss_feed_url}]
+    with settings.sources_config_path.open(encoding="utf-8") as file:
+        configured = yaml.safe_load(file) or {}
+    sources = []
+    for item in configured.get("rss_sources", []):
+        if not item.get("enabled", True):
+            continue
+        feed_url = item.get("feed_url") or google_news_feed_url(item["query"])
+        sources.append({"name": item["name"], "feed_url": feed_url})
+    return sources
+
+
+def get_or_create_source(db: Session, name: str, feed_url: str) -> Source:
+    source = db.scalar(select(Source).where(Source.feed_url == feed_url))
     if source is None:
-        source = Source(
-            name=settings.rss_source_name,
-            domain=urlparse(settings.rss_feed_url).netloc,
-            feed_url=settings.rss_feed_url,
-        )
+        source = Source(name=name, domain=urlparse(feed_url).netloc, feed_url=feed_url)
         db.add(source)
         db.flush()
+    return source
+
+
+def ingest_rss(db: Session) -> dict[str, int]:
     topics = sync_topics(db)
-    feed = feedparser.parse(settings.rss_feed_url)
-    if feed.bozo and not feed.entries:
-        raise RuntimeError(f"RSS parsing failed: {feed.bozo_exception}")
-    inserted = duplicate = classified = 0
-    for entry in feed.entries:
-        title = (getattr(entry, "title", "") or "").strip()
-        url = (getattr(entry, "link", "") or "").strip()
-        if not title or not url:
+    inserted = duplicate = classified = failed_sources = 0
+    sources = load_rss_sources()
+    for config in sources:
+        source = get_or_create_source(db, config["name"], config["feed_url"])
+        feed = feedparser.parse(config["feed_url"])
+        if feed.bozo and not feed.entries:
+            failed_sources += 1
             continue
-        summary = re.sub(
-            r"<[^>]+>",
-            " ",
-            html.unescape(getattr(entry, "summary", "") or getattr(entry, "description", "") or ""),
-        ).strip()
-        clean_url = canonical(url)
-        digest = hashlib.sha256((title + summary).encode()).hexdigest()
-        exists = db.scalar(
-            select(Article.id).where(
-                (Article.original_url == url)
-                | (Article.canonical_url == clean_url)
-                | (Article.content_hash == digest)
-            )
-        )
-        if exists:
-            duplicate += 1
-            continue
-        article = Article(
-            source_id=source.id,
-            title=title,
-            summary=summary,
-            content=summary,
-            original_url=url,
-            canonical_url=clean_url,
-            source_name=source.name,
-            source_domain=source.domain,
-            published_at=published(entry),
-            title_hash=hashlib.sha256(title.encode()).hexdigest(),
-            content_hash=digest,
-        )
-        db.add(article)
-        db.flush()
-        haystack = (title + "\n" + summary).casefold()
-        for topic in topics:
-            hits = sorted(
-                {
-                    term
-                    for term in [topic.display_name, *topic.aliases, *topic.keywords]
-                    if term and term.casefold() in haystack
-                }
-            )
-            if hits:
-                db.add(
-                    ArticleTopic(article_id=article.id, topic_id=topic.id, matched_keywords=hits)
+        for entry in feed.entries:
+            title = (getattr(entry, "title", "") or "").strip()
+            url = (getattr(entry, "link", "") or "").strip()
+            if not title or not url:
+                continue
+            summary = re.sub(
+                r"<[^>]+>",
+                " ",
+                html.unescape(getattr(entry, "summary", "") or getattr(entry, "description", "") or ""),
+            ).strip()
+            clean_url = canonical(url)
+            digest = hashlib.sha256((title + summary).encode()).hexdigest()
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url)
+                    | (Article.canonical_url == clean_url)
+                    | (Article.content_hash == digest)
                 )
-        db.flush()
-        db.refresh(article, attribute_names=["topic_links"])
-        classified += classify_article(db, article)
-        inserted += 1
+            )
+            if exists:
+                duplicate += 1
+                continue
+            article = Article(
+                source_id=source.id,
+                title=title,
+                summary=summary,
+                content=summary,
+                original_url=url,
+                canonical_url=clean_url,
+                source_name=source.name,
+                source_domain=source.domain,
+                published_at=published(entry),
+                title_hash=hashlib.sha256(title.encode()).hexdigest(),
+                content_hash=digest,
+            )
+            db.add(article)
+            db.flush()
+            haystack = (title + "\n" + summary).casefold()
+            for topic in topics:
+                hits = sorted(
+                    {
+                        term
+                        for term in [topic.display_name, *topic.aliases, *topic.keywords]
+                        if term and term.casefold() in haystack
+                    }
+                )
+                if hits:
+                    db.add(ArticleTopic(article_id=article.id, topic_id=topic.id, matched_keywords=hits))
+            db.flush()
+            db.refresh(article, attribute_names=["topic_links"])
+            classified += classify_article(db, article)
+            inserted += 1
     db.commit()
-    return {"inserted": inserted, "duplicate": duplicate, "classified": classified}
+    return {
+        "sources": len(sources),
+        "failed_sources": failed_sources,
+        "inserted": inserted,
+        "duplicate": duplicate,
+        "classified": classified,
+    }

@@ -12,3 +12,7 @@
 | [Evidence-grounded RAG](rag.md) | 回答、引用校验与 LLM Provider 升级路径 |
 | [Environment](environment.md) | 本地、Docker、测试与生产环境变量规范 |
 | [CI](ci.md) | GitHub Actions 质量门禁与发布前检查 |
+## Evaluation
+
+- `evaluation/README.md`: reproducible V1 evaluation protocol and acceptance gates.
+- `evaluation/questions.v1.json`: 30 versioned questions awaiting frozen-corpus annotations.

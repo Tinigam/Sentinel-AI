@@ -49,3 +49,8 @@ Use dependency caches keyed by lockfiles. Pin GitHub Actions by major version in
 ## Release Gate
 
 Before tagging a release, all required jobs must pass, the migration is reversible or explicitly documented, `.env.example` is current, and the README startup flow succeeds from a clean checkout.
+## Current checks
+
+- Backend: Ruff and pytest.
+- Frontend: Vitest and production build.
+- Deployment: `docker compose config --quiet`.
