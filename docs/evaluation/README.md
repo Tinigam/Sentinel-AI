@@ -40,3 +40,16 @@ The generated file records the UTC time, commit SHA, query set, retrieval method
 - `0`: not relevant.
 
 Keep generated snapshots and personal review files out of Git until they have been reviewed for licensing and data-retention requirements.
+## Retrieval scoring
+
+After reviewers grade all relevant candidates, calculate metrics:
+
+```powershell
+python scripts/score_retrieval_evaluation.py `
+  --candidates docs/evaluation/runs/candidates-YYYYMMDD.json `
+  --annotations docs/evaluation/annotations.v1.reviewed.csv `
+  --output docs/evaluation/runs/retrieval-score-YYYYMMDD.json `
+  --k 10
+```
+
+The score uses graded relevance (`0`, `1`, `2`), reports macro-averaged Recall@K and nDCG@K, and includes per-question scores for error analysis.
