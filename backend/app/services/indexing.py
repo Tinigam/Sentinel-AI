@@ -46,7 +46,14 @@ def index_article(db: Session, article: Article) -> int:
 
 
 def index_relevant_articles(db: Session) -> dict[str, int | str]:
-    articles = db.scalars(select(Article).join(ArticleTopic).distinct()).all()
+    db.execute(
+        delete(ArticleChunk).where(
+            ArticleChunk.article_id.in_(select(Article.id).where(Article.is_intelligence.is_(False)))
+        )
+    )
+    articles = db.scalars(
+        select(Article).join(ArticleTopic).where(Article.is_intelligence.is_(True)).distinct()
+    ).all()
     chunk_count = sum(index_article(db, article) for article in articles)
     db.commit()
     return {"articles": len(articles), "chunks": chunk_count, "embedding_model": EMBEDDING_MODEL}

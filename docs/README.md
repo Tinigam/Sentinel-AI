@@ -16,3 +16,5 @@
 
 - `evaluation/README.md`: reproducible V1 evaluation protocol and acceptance gates.
 - `evaluation/questions.v1.json`: 30 versioned questions awaiting frozen-corpus annotations.
+
+- `data-quality.md`: source provenance, article taxonomy, filtering and reclassification operations.

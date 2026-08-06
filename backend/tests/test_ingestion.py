@@ -43,6 +43,6 @@ def test_load_rss_sources_uses_enabled_entries(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr(ingestion, "get_settings", lambda: settings)
 
     assert ingestion.load_rss_sources() == [
-        {"name": "Direct feed", "feed_url": "https://example.com/feed.xml"},
-        {"name": "Search feed", "feed_url": ingestion.google_news_feed_url("test query")},
+        {"name": "Direct feed", "feed_url": "https://example.com/feed.xml", "source_type": "aggregator", "trust_tier": "aggregated"},
+        {"name": "Search feed", "feed_url": ingestion.google_news_feed_url("test query"), "source_type": "aggregator", "trust_tier": "aggregated"},
     ]

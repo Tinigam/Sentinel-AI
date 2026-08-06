@@ -23,6 +23,8 @@ class Source(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True)
     domain: Mapped[str | None] = mapped_column(String(255))
     feed_url: Mapped[str] = mapped_column(String(2048), unique=True)
+    source_type: Mapped[str] = mapped_column(String(32), default="aggregator")
+    trust_tier: Mapped[str] = mapped_column(String(32), default="aggregated")
 
 
 class Article(Base):
@@ -40,6 +42,8 @@ class Article(Base):
     title_hash: Mapped[str] = mapped_column(String(64))
     content_hash: Mapped[str | None] = mapped_column(String(64))
     processing_status: Mapped[str] = mapped_column(String(20), default="cleaned")
+    content_type: Mapped[str] = mapped_column(String(32), default="media_news", index=True)
+    is_intelligence: Mapped[bool] = mapped_column(default=True, index=True)
     search_vector: Mapped[object | None] = mapped_column(TSVECTOR, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     topic_links: Mapped[list["ArticleTopic"]] = relationship(

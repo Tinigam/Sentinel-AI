@@ -38,6 +38,8 @@ def output(article: Article, db: Session) -> dict:
         "source_domain": article.source_domain,
         "original_url": article.original_url,
         "published_at": article.published_at,
+        "content_type": article.content_type,
+        "is_intelligence": article.is_intelligence,
         "topics": [
             {"slug": link.topic.slug, "display_name": link.topic.display_name}
             for link in article.topic_links
@@ -73,6 +75,7 @@ def news(
     topic: str | None = None,
     sentiment: str | None = None,
     date_from: datetime | None = None,
+    content_type: str | None = None,
     date_to: datetime | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -83,11 +86,17 @@ def news(
         .join(ArticleTopic)
         .options(selectinload(Article.topic_links).selectinload(ArticleTopic.topic))
     )
-    count = select(func.count(func.distinct(Article.id))).join(ArticleTopic)
+    statement = statement.where(Article.is_intelligence.is_(True))
+    count = select(func.count(func.distinct(Article.id))).join(ArticleTopic).where(
+        Article.is_intelligence.is_(True)
+    )
     if topic:
         topic_id = select(Topic.id).where(Topic.slug == topic).scalar_subquery()
         statement = statement.where(ArticleTopic.topic_id == topic_id)
         count = count.where(ArticleTopic.topic_id == topic_id)
+    if content_type:
+        statement = statement.where(Article.content_type == content_type)
+        count = count.where(Article.content_type == content_type)
     if sentiment:
         statement = statement.join(ArticleSentiment).where(
             ArticleSentiment.label == sentiment, ArticleSentiment.model_name == MODEL_NAME
@@ -131,17 +140,25 @@ def one(article_id: UUID, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/dashboard/summary")
 def dashboard_summary(db: Session = Depends(get_db)) -> dict:
-    total = db.scalar(select(func.count(func.distinct(Article.id))).join(ArticleTopic)) or 0
+    total = (
+        db.scalar(
+            select(func.count(func.distinct(Article.id))).join(ArticleTopic).where(Article.is_intelligence.is_(True))
+        )
+        or 0
+    )
     labels = dict(
         db.execute(
             select(ArticleSentiment.label, func.count(ArticleSentiment.id))
-            .where(ArticleSentiment.model_name == MODEL_NAME)
+            .join(Article, Article.id == ArticleSentiment.article_id)
+            .where(ArticleSentiment.model_name == MODEL_NAME, Article.is_intelligence.is_(True))
             .group_by(ArticleSentiment.label)
         ).all()
     )
     ranked = db.execute(
         select(Topic.slug, Topic.display_name, func.count(ArticleTopic.article_id))
         .join(ArticleTopic)
+        .join(Article, Article.id == ArticleTopic.article_id)
+        .where(Article.is_intelligence.is_(True))
         .group_by(Topic.id)
         .order_by(func.count(ArticleTopic.article_id).desc())
         .limit(5)
@@ -176,7 +193,7 @@ def dashboard_trends(db: Session = Depends(get_db)) -> dict:
             (ArticleSentiment.article_id == Article.id)
             & (ArticleSentiment.model_name == MODEL_NAME),
         )
-        .where(Article.published_at.is_not(None))
+        .where(Article.published_at.is_not(None), Article.is_intelligence.is_(True))
         .group_by(day)
         .order_by(day)
     ).all()
@@ -221,7 +238,7 @@ def classify(
     x_ingest_key: str | None = Header(default=None), db: Session = Depends(get_db)
 ) -> dict:
     require_ingest_key(x_ingest_key)
-    return {"status": "completed", "classified": classify_unprocessed(db)}
+    return {"status": "completed", **classify_unprocessed(db)}
 
 
 @router.post("/ask")

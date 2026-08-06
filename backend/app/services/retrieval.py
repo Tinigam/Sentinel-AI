@@ -18,7 +18,7 @@ def hybrid_search(
         ArticleChunk.article_id,
         ArticleChunk.content,
         ArticleChunk.embedding.cosine_distance(embed(query)).label("distance"),
-    ).join(Article)
+    ).join(Article).where(Article.is_intelligence.is_(True))
     if topic:
         topic_id = select(Topic.id).where(Topic.slug == topic).scalar_subquery()
         fts = fts.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
@@ -52,6 +52,7 @@ def hybrid_search(
                 "article_id": str(article_id),
                 "score": round(scores[article_id], 6),
                 "title": articles[article_id].title,
+                "content_type": articles[article_id].content_type,
                 "source": articles[article_id].source_name,
                 "published_at": articles[article_id].published_at,
                 "url": articles[article_id].original_url,

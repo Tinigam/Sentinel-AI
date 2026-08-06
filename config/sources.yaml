@@ -1,14 +1,23 @@
-# All configured feeds are public RSS endpoints. Google News feeds are query-based
-# aggregators; an article's original publisher URL remains the stored evidence URL.
-# Direct official RSS feeds can be added with `feed_url` when a publisher provides one.
+# source_type describes the intended publishing channel; trust_tier records evidence quality.
+# Google News remains a transport layer. Store the original publisher URL on each article.
 rss_sources:
-  - name: Google News — selected games
-    query: '"原神" OR "崩坏：星穹铁道" OR "绝区零" OR "鸣潮" OR "明日方舟" OR "终末地" OR "少女前线2" OR "王者荣耀" OR "第五人格" OR "无畏契约" OR "三角洲行动"'
+  - name: Google News - selected games
+    source_type: aggregator
+    trust_tier: aggregated
+    query: 'Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2" OR "Honor of Kings" OR "Identity V" OR VALORANT OR "Delta Force"'
   - name: GameLook via Google News
-    query: 'site:gamelook.com.cn ("原神" OR "崩坏：星穹铁道" OR "绝区零" OR "鸣潮" OR "明日方舟" OR "王者荣耀" OR "无畏契约" OR "三角洲行动")'
-  - name: 游研社 via Google News
-    query: 'site:yystv.cn ("原神" OR "崩坏：星穹铁道" OR "绝区零" OR "鸣潮" OR "明日方舟" OR "王者荣耀" OR "无畏契约" OR "三角洲行动")'
-  - name: 游戏葡萄 via Google News
-    query: 'site:youxiputao.com ("原神" OR "崩坏：星穹铁道" OR "绝区零" OR "鸣潮" OR "明日方舟" OR "王者荣耀" OR "无畏契约" OR "三角洲行动")'
+    source_type: media
+    trust_tier: aggregated
+    query: 'site:gamelook.com.cn (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+  - name: YYTV via Google News
+    source_type: media
+    trust_tier: aggregated
+    query: 'site:yystv.cn (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+  - name: Youxiputao via Google News
+    source_type: media
+    trust_tier: aggregated
+    query: 'site:youxiputao.com (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
   - name: 3DM via Google News
-    query: 'site:3dmgame.com ("原神" OR "崩坏：星穹铁道" OR "绝区零" OR "鸣潮" OR "明日方舟" OR "王者荣耀" OR "无畏契约" OR "三角洲行动")'
+    source_type: media
+    trust_tier: aggregated
+    query: 'site:3dmgame.com (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'

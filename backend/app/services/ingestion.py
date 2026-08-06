@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.entities import Article, ArticleTopic, Source, Topic
+from app.services.content import classify_content_type
 from app.services.sentiment import classify_article
 
 
@@ -49,7 +50,7 @@ def google_news_feed_url(query: str) -> str:
 def load_rss_sources() -> list[dict[str, str]]:
     settings = get_settings()
     if not settings.sources_config_path.exists():
-        return [{"name": settings.rss_source_name, "feed_url": settings.rss_feed_url}]
+        return [{"name": settings.rss_source_name, "feed_url": settings.rss_feed_url, "source_type": "aggregator", "trust_tier": "aggregated"}]
     with settings.sources_config_path.open(encoding="utf-8") as file:
         configured = yaml.safe_load(file) or {}
     sources = []
@@ -57,16 +58,32 @@ def load_rss_sources() -> list[dict[str, str]]:
         if not item.get("enabled", True):
             continue
         feed_url = item.get("feed_url") or google_news_feed_url(item["query"])
-        sources.append({"name": item["name"], "feed_url": feed_url})
+        sources.append(
+            {
+                "name": item["name"],
+                "feed_url": feed_url,
+                "source_type": item.get("source_type", "aggregator"),
+                "trust_tier": item.get("trust_tier", "aggregated"),
+            }
+        )
     return sources
 
 
-def get_or_create_source(db: Session, name: str, feed_url: str) -> Source:
-    source = db.scalar(select(Source).where(Source.feed_url == feed_url))
+def get_or_create_source(db: Session, config: dict[str, str]) -> Source:
+    source = db.scalar(select(Source).where(Source.feed_url == config["feed_url"]))
     if source is None:
-        source = Source(name=name, domain=urlparse(feed_url).netloc, feed_url=feed_url)
+        source = Source(
+            name=config["name"],
+            domain=urlparse(config["feed_url"]).netloc,
+            feed_url=config["feed_url"],
+            source_type=config["source_type"],
+            trust_tier=config["trust_tier"],
+        )
         db.add(source)
-        db.flush()
+    else:
+        source.source_type = config["source_type"]
+        source.trust_tier = config["trust_tier"]
+    db.flush()
     return source
 
 
@@ -75,7 +92,7 @@ def ingest_rss(db: Session) -> dict[str, int]:
     inserted = duplicate = classified = failed_sources = 0
     sources = load_rss_sources()
     for config in sources:
-        source = get_or_create_source(db, config["name"], config["feed_url"])
+        source = get_or_create_source(db, config)
         feed = feedparser.parse(config["feed_url"])
         if feed.bozo and not feed.entries:
             failed_sources += 1
@@ -102,6 +119,7 @@ def ingest_rss(db: Session) -> dict[str, int]:
             if exists:
                 duplicate += 1
                 continue
+            content_classification = classify_content_type(title, summary, source.source_type)
             article = Article(
                 source_id=source.id,
                 title=title,
@@ -114,6 +132,8 @@ def ingest_rss(db: Session) -> dict[str, int]:
                 published_at=published(entry),
                 title_hash=hashlib.sha256(title.encode()).hexdigest(),
                 content_hash=digest,
+                content_type=content_classification.content_type,
+                is_intelligence=content_classification.is_intelligence,
             )
             db.add(article)
             db.flush()
@@ -130,7 +150,8 @@ def ingest_rss(db: Session) -> dict[str, int]:
                     db.add(ArticleTopic(article_id=article.id, topic_id=topic.id, matched_keywords=hits))
             db.flush()
             db.refresh(article, attribute_names=["topic_links"])
-            classified += classify_article(db, article)
+            if article.is_intelligence:
+                classified += classify_article(db, article)
             inserted += 1
     db.commit()
     return {

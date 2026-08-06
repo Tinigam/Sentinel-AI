@@ -1,7 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.entities import Article, ArticleSentiment, ArticleTopic
+from app.models.entities import Article, ArticleSentiment, ArticleTopic, Source
+from app.services.content import classify_content_type
 
 POSITIVE_TERMS = ("获奖", "增长", "突破", "好评", "上线", "更新", "联动", "成功", "合作", "喜报")
 NEGATIVE_TERMS = (
@@ -74,8 +75,17 @@ def classify_article(db: Session, article: Article) -> int:
     return created
 
 
-def classify_unprocessed(db: Session) -> int:
-    articles = db.scalars(select(Article).join(ArticleTopic).distinct()).all()
-    count = sum(classify_article(db, article) for article in articles)
+def classify_unprocessed(db: Session) -> dict[str, int]:
+    content_types: dict[str, int] = {}
+    rows = db.execute(select(Article, Source.source_type).join(Source)).all()
+    for article, source_type in rows:
+        result = classify_content_type(article.title, article.summary or "", source_type)
+        article.content_type = result.content_type
+        article.is_intelligence = result.is_intelligence
+        content_types[result.content_type] = content_types.get(result.content_type, 0) + 1
+    articles = db.scalars(
+        select(Article).join(ArticleTopic).where(Article.is_intelligence.is_(True)).distinct()
+    ).all()
+    classified = sum(classify_article(db, article) for article in articles)
     db.commit()
-    return count
+    return {"classified": classified, **content_types}
