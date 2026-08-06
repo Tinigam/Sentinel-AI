@@ -24,3 +24,19 @@ Do not treat a community opinion as a verified fact. The `source_type` of every 
 | Invalid citation IDs | 0 |
 
 `questions.v1.json` is a seed set. It becomes a scored benchmark only after article IDs are annotated for a frozen corpus.
+## Candidate export
+
+With Docker Compose running, create a corpus-specific candidate snapshot:
+
+```powershell
+python scripts/export_evaluation_candidates.py `
+  --output docs/evaluation/runs/candidates-YYYYMMDD.json
+```
+
+The generated file records the UTC time, commit SHA, query set, retrieval method and returned article IDs. Copy `annotations.v1.template.csv` to an ignored run-specific file, then review candidates using these grades:
+
+- `2`: directly supports the answer or required evidence.
+- `1`: relevant context but insufficient on its own.
+- `0`: not relevant.
+
+Keep generated snapshots and personal review files out of Git until they have been reviewed for licensing and data-retention requirements.

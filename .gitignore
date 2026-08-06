@@ -9,3 +9,7 @@ dist/
 coverage/
 *.py[cod]
 *.egg-info/
+
+# Generated evaluation candidates and reviewer annotations
+docs/evaluation/runs/
+docs/evaluation/*.reviewed.csv
