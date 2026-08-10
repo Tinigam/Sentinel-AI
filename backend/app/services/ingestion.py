@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.collectors.bilibili import BilibiliClient, format_comments_section
+from app.collectors.bilibili import BilibiliClient, BilibiliError, format_comments_section
 from app.collectors.official_pages import discover_announcements, extract_title, fetch_html, html_to_text
 from app.models.entities import Article, ArticleTopic, CommunityComment, Source, Topic
 from app.services.community import compute_comment_metrics
@@ -201,7 +201,7 @@ def ingest_official_pages(db: Session) -> dict[str, int]:
         )
         try:
             announcements = discover_announcements(page["url"])
-        except Exception:
+        except OSError:
             failed_pages += 1
             continue
         for item in announcements:
@@ -218,7 +218,7 @@ def ingest_official_pages(db: Session) -> dict[str, int]:
                 continue
             try:
                 document = fetch_html(item["url"])
-            except Exception:
+            except OSError:
                 failed_items += 1
                 continue
             text = html_to_text(document)[:OFFICIAL_CONTENT_LIMIT]
@@ -311,7 +311,7 @@ def ingest_bilibili(db: Session) -> dict[str, int]:
         )
         try:
             videos = client.account_videos(account["mid"], limit=settings.bilibili_videos_per_account)
-        except Exception:
+        except (BilibiliError, OSError, ValueError):
             failed_accounts += 1
             continue
         for video in videos:
@@ -329,7 +329,7 @@ def ingest_bilibili(db: Session) -> dict[str, int]:
                 comments = client.video_comments(
                     video["aid"], limit=settings.bilibili_comments_per_video
                 )
-            except Exception:
+            except (BilibiliError, OSError, ValueError):
                 failed_items += 1
                 comments = []
             body = video["description"].strip()
@@ -381,7 +381,7 @@ def ingest_bilibili(db: Session) -> dict[str, int]:
                     full = client.video_comments_full(
                         newest["aid"], max_pages=settings.bilibili_comment_pages
                     )
-                except Exception:
+                except (BilibiliError, OSError, ValueError):
                     failed_items += 1
                     full = []
                 seen_ids: set[str] = set()

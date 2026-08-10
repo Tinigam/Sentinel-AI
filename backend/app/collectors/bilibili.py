@@ -9,6 +9,7 @@ collection reliable. The comment endpoint is accessible anonymously.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.cookiejar
 import json
@@ -82,11 +83,9 @@ class BilibiliClient:
 
     def bootstrap(self) -> None:
         """Obtain anonymous buvid cookies; tolerated failure (some endpoints work without)."""
-        try:
+        with contextlib.suppress(OSError):
             self._throttle()
             self._opener.open("https://www.bilibili.com", timeout=self.timeout).read(1)
-        except Exception:
-            pass
 
     def _wbi_key(self) -> str:
         if self._mixin is None:
