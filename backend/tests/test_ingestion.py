@@ -1,7 +1,33 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from app.services import ingestion
+
+
+def test_get_or_create_source_updates_feed_url_when_name_matches() -> None:
+    existing = SimpleNamespace(
+        name="GameLook via Google News",
+        domain="news.google.com",
+        feed_url="https://news.google.com/rss/search?q=old-query",
+        source_type="aggregator",
+        trust_tier="aggregated",
+    )
+    db = MagicMock()
+    db.scalar.side_effect = [None, existing]
+    config = {
+        "name": "GameLook via Google News",
+        "feed_url": "https://news.google.com/rss/search?q=new-query",
+        "source_type": "media",
+        "trust_tier": "aggregated",
+    }
+
+    source = ingestion.get_or_create_source(db, config)
+
+    assert source is existing
+    assert source.feed_url == config["feed_url"]
+    assert source.source_type == "media"
+    db.add.assert_not_called()
 
 
 def test_canonical_removes_tracking_parts_and_normalizes_host() -> None:
@@ -45,4 +71,25 @@ def test_load_rss_sources_uses_enabled_entries(monkeypatch, tmp_path: Path) -> N
     assert ingestion.load_rss_sources() == [
         {"name": "Direct feed", "feed_url": "https://example.com/feed.xml", "source_type": "aggregator", "trust_tier": "aggregated"},
         {"name": "Search feed", "feed_url": ingestion.google_news_feed_url("test query"), "source_type": "aggregator", "trust_tier": "aggregated"},
+    ]
+
+
+def test_load_official_pages_reads_enabled_entries(monkeypatch, tmp_path: Path) -> None:
+    config = tmp_path / "sources.yaml"
+    config.write_text(
+        "official_pages:\n"
+        "  - name: Official news\n"
+        "    url: https://example.com/news\n"
+        "    topic: arknights\n"
+        "  - name: Disabled page\n"
+        "    enabled: false\n"
+        "    url: https://example.com/disabled\n"
+        "    topic: arknights\n",
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(sources_config_path=config)
+    monkeypatch.setattr(ingestion, "get_settings", lambda: settings)
+
+    assert ingestion.load_official_pages() == [
+        {"name": "Official news", "url": "https://example.com/news", "topic": "arknights"}
     ]

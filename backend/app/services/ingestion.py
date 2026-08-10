@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.collectors.official_pages import discover_announcements, extract_title, fetch_html, html_to_text
 from app.models.entities import Article, ArticleTopic, Source, Topic
 from app.services.content import classify_content_type
 from app.services.sentiment import classify_article
@@ -72,17 +73,15 @@ def load_rss_sources() -> list[dict[str, str]]:
 def get_or_create_source(db: Session, config: dict[str, str]) -> Source:
     source = db.scalar(select(Source).where(Source.feed_url == config["feed_url"]))
     if source is None:
-        source = Source(
-            name=config["name"],
-            domain=urlparse(config["feed_url"]).netloc,
-            feed_url=config["feed_url"],
-            source_type=config["source_type"],
-            trust_tier=config["trust_tier"],
-        )
+        source = db.scalar(select(Source).where(Source.name == config["name"]))
+    if source is None:
+        source = Source(name=config["name"])
         db.add(source)
-    else:
-        source.source_type = config["source_type"]
-        source.trust_tier = config["trust_tier"]
+    source.name = config["name"]
+    source.domain = urlparse(config["feed_url"]).netloc
+    source.feed_url = config["feed_url"]
+    source.source_type = config["source_type"]
+    source.trust_tier = config["trust_tier"]
     db.flush()
     return source
 
@@ -157,6 +156,106 @@ def ingest_rss(db: Session) -> dict[str, int]:
     return {
         "sources": len(sources),
         "failed_sources": failed_sources,
+        "inserted": inserted,
+        "duplicate": duplicate,
+        "classified": classified,
+    }
+
+OFFICIAL_CONTENT_LIMIT = 20000
+
+
+def load_official_pages() -> list[dict[str, str]]:
+    settings = get_settings()
+    if not settings.sources_config_path.exists():
+        return []
+    with settings.sources_config_path.open(encoding="utf-8") as file:
+        configured = yaml.safe_load(file) or {}
+    pages = []
+    for item in configured.get("official_pages", []):
+        if not item.get("enabled", True):
+            continue
+        pages.append({"name": item["name"], "url": item["url"], "topic": item["topic"]})
+    return pages
+
+
+def ingest_official_pages(db: Session) -> dict[str, int]:
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    pages = load_official_pages()
+    inserted = duplicate = classified = failed_pages = failed_items = 0
+    for page in pages:
+        topic = topic_by_slug.get(page["topic"])
+        if topic is None:
+            failed_pages += 1
+            continue
+        source = get_or_create_source(
+            db,
+            {
+                "name": page["name"],
+                "feed_url": page["url"],
+                "source_type": "official",
+                "trust_tier": "verified",
+            },
+        )
+        try:
+            announcements = discover_announcements(page["url"])
+        except Exception:
+            failed_pages += 1
+            continue
+        for item in announcements:
+            clean_url = canonical(item["url"])
+            if clean_url == canonical(page["url"]):
+                continue
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == item["url"]) | (Article.canonical_url == clean_url)
+                )
+            )
+            if exists:
+                duplicate += 1
+                continue
+            try:
+                document = fetch_html(item["url"])
+            except Exception:
+                failed_items += 1
+                continue
+            text = html_to_text(document)[:OFFICIAL_CONTENT_LIMIT]
+            title = item["title"] or extract_title(document)
+            if not text or not title:
+                failed_items += 1
+                continue
+            digest = hashlib.sha256((title + text).encode()).hexdigest()
+            article = Article(
+                source_id=source.id,
+                title=title,
+                summary=text[:500],
+                content=text,
+                original_url=item["url"],
+                canonical_url=clean_url,
+                source_name=source.name,
+                source_domain=source.domain,
+                published_at=None,
+                title_hash=hashlib.sha256(title.encode()).hexdigest(),
+                content_hash=digest,
+                content_type="official_announcement",
+                is_intelligence=True,
+            )
+            db.add(article)
+            db.flush()
+            db.add(
+                ArticleTopic(
+                    article_id=article.id, topic_id=topic.id, matched_keywords=["official_page"]
+                )
+            )
+            db.flush()
+            db.refresh(article, attribute_names=["topic_links"])
+            classified += classify_article(db, article)
+            inserted += 1
+    db.commit()
+    return {
+        "pages": len(pages),
+        "failed_pages": failed_pages,
+        "failed_items": failed_items,
         "inserted": inserted,
         "duplicate": duplicate,
         "classified": classified,

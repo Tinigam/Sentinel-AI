@@ -36,3 +36,5 @@ The first command recomputes article types and creates missing sentiments for el
 ## Official page discovery
 
 official_pages supports static public announcement lists. Each configured page has a first-party URL, a topic, and official / erified provenance metadata. The collector intentionally accepts only same-domain announcement-like links; dynamic sites that render no links are skipped rather than bypassed.
+
+`POST /api/v1/ingest` runs both RSS ingestion and official page discovery. For server-rendered sites that embed links in JSON payloads instead of anchors (for example Next.js pages), discovery falls back to extracting same-domain announcement URLs from the raw document; titles are then read from each detail page's `<title>`. Pure client-rendered shells (for example sr.mihoyo.com) still yield nothing and need site-specific adapters.
