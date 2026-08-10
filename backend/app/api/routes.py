@@ -13,7 +13,7 @@ from app.services.ingestion import ingest_bilibili, ingest_official_pages, inges
 from app.services.retrieval import hybrid_search
 from app.schemas import AskRequest
 from app.services.rag import answer_question
-from app.services.sentiment import MODEL_NAME, classify_unprocessed
+from app.services.sentiment import classify_unprocessed, sentiment_model_name
 
 router = APIRouter()
 
@@ -28,7 +28,10 @@ def output(article: Article, db: Session) -> dict:
     sentiment_rows = db.execute(
         select(ArticleSentiment, Topic.slug)
         .join(Topic, Topic.id == ArticleSentiment.topic_id)
-        .where(ArticleSentiment.article_id == article.id, ArticleSentiment.model_name == MODEL_NAME)
+        .where(
+            ArticleSentiment.article_id == article.id,
+            ArticleSentiment.model_name == sentiment_model_name(),
+        )
     ).all()
     return {
         "id": str(article.id),
@@ -98,11 +101,12 @@ def news(
         statement = statement.where(Article.content_type == content_type)
         count = count.where(Article.content_type == content_type)
     if sentiment:
+        model_name = sentiment_model_name()
         statement = statement.join(ArticleSentiment).where(
-            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == MODEL_NAME
+            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
         count = count.join(ArticleSentiment).where(
-            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == MODEL_NAME
+            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
     if date_from:
         statement = statement.where(Article.published_at >= date_from)
@@ -150,7 +154,10 @@ def dashboard_summary(db: Session = Depends(get_db)) -> dict:
         db.execute(
             select(ArticleSentiment.label, func.count(ArticleSentiment.id))
             .join(Article, Article.id == ArticleSentiment.article_id)
-            .where(ArticleSentiment.model_name == MODEL_NAME, Article.is_intelligence.is_(True))
+            .where(
+                ArticleSentiment.model_name == sentiment_model_name(),
+                Article.is_intelligence.is_(True),
+            )
             .group_by(ArticleSentiment.label)
         ).all()
     )
@@ -191,7 +198,7 @@ def dashboard_trends(db: Session = Depends(get_db)) -> dict:
         .outerjoin(
             ArticleSentiment,
             (ArticleSentiment.article_id == Article.id)
-            & (ArticleSentiment.model_name == MODEL_NAME),
+            & (ArticleSentiment.model_name == sentiment_model_name()),
         )
         .where(Article.published_at.is_not(None), Article.is_intelligence.is_(True))
         .group_by(day)

@@ -24,14 +24,12 @@ The `simple` configuration is a portable baseline. Production Chinese quality sh
 
 ## Vector Search
 
-Each relevant article is currently stored as one bounded text chunk and indexed with pgvector cosine distance. The V1 development provider is `local-hash.v1`: a deterministic token-hashing vector that keeps Docker Compose fully runnable without an API key.
+Each relevant article is currently stored as one bounded text chunk and indexed with pgvector cosine distance. The embedding provider is chosen per process by API-key presence in `app.services.indexing.embed_texts`:
 
-It is intentionally a functional development baseline, not a claim of production-quality semantic embeddings. The provider boundary is `app.services.indexing.embed`. To upgrade:
+- With `OPENAI_API_KEY` set, chunks and queries go through the OpenAI-compatible endpoint (`LLM_BASE_URL` + `EMBEDDING_MODEL`, e.g. Aliyun Bailian `text-embedding-v4` at dimension 1536).
+- Without a key, the deterministic `local-hash.v1` token-hashing vector keeps Docker Compose and unit tests fully runnable offline.
 
-1. Add a provider configuration and secret-backed API key.
-2. Call the selected embedding API for every chunk and query.
-3. Ensure output dimension matches the `vector(1536)` schema, or add a migration for a new dimension.
-4. Reindex all chunks.
+Remote failures raise `EmbeddingError` instead of falling back mid-run, so the index never mixes vector spaces. Switching providers or dimensions requires reindexing all chunks; a dimension other than 1536 also requires a migration for the `vector(1536)` schema.
 5. Re-run Recall@K, nDCG@K, Citation Correctness, Coverage, and Relevance evaluations.
 
 ## RRF

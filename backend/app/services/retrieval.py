@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Article, ArticleChunk, ArticleSentiment, ArticleTopic, Topic
 from app.services.indexing import embed
-from app.services.sentiment import MODEL_NAME
+from app.services.sentiment import sentiment_model_name
 
 RRF_K = 60
 
@@ -11,6 +11,7 @@ RRF_K = 60
 def hybrid_search(
     db: Session, query: str, topic: str | None = None, sentiment: str | None = None, limit: int = 8
 ) -> dict:
+    model_name = sentiment_model_name()
     fts = select(Article.id).where(
         Article.search_vector.op("@@")(func.websearch_to_tsquery("simple", query))
     )
@@ -25,10 +26,10 @@ def hybrid_search(
         vector = vector.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
     if sentiment:
         fts = fts.join(ArticleSentiment).where(
-            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == MODEL_NAME
+            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
         vector = vector.join(ArticleSentiment).where(
-            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == MODEL_NAME
+            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
     fts_ids = [row[0] for row in db.execute(fts.limit(20)).all()]
     vector_rows = db.execute(vector.order_by("distance").limit(20)).all()

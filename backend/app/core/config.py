@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     bilibili_videos_per_account: int = 5
     bilibili_comments_per_video: int = 15
     bilibili_comment_pages: int = 25
+    openai_api_key: str = ""
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    llm_model: str = "qwen-plus"
+    embedding_model: str = "text-embedding-v4"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

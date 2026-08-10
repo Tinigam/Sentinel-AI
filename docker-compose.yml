@@ -25,6 +25,10 @@ services:
       BILIBILI_VIDEOS_PER_ACCOUNT: ${BILIBILI_VIDEOS_PER_ACCOUNT:-5}
       BILIBILI_COMMENTS_PER_VIDEO: ${BILIBILI_COMMENTS_PER_VIDEO:-15}
       BILIBILI_COMMENT_PAGES: ${BILIBILI_COMMENT_PAGES:-25}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen-plus}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
     ports: ["8000:8000"]
     depends_on:
       db:
