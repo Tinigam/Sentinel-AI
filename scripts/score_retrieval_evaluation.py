@@ -26,7 +26,7 @@ def main() -> int:
 
     candidate_data = json.loads(args.candidates.read_text(encoding="utf-8"))
     labels: dict[str, dict[str, int]] = defaultdict(dict)
-    with args.annotations.open(encoding="utf-8", newline="") as file:
+    with args.annotations.open(encoding="utf-8-sig", newline="") as file:
         for row in csv.DictReader(file):
             article_id = (row.get("article_id") or "").strip()
             grade_value = (row.get("relevance_grade") or "").strip()
