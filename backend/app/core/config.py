@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     bilibili_videos_per_account: int = 25
     bilibili_comments_per_video: int = 15
     bilibili_comment_pages: int = 25
+    tieba_threads_per_forum: int = 20
+    tieba_min_replies: int = 5
     openai_api_key: str = ""
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_model: str = "qwen-plus"

@@ -53,6 +53,8 @@ Neither rerank nor multi-query expansion cleared the 0.80 Recall@10 gate: the re
 
 Corpus scaling confirms the coverage hypothesis (same final 638-pair annotation file): enlarging the corpus from 750 to 915 articles (+22%, 25 videos per bilibili account) lifted Recall@10 from 0.460 to 0.637 and nDCG@10 from 0.563 to 0.733. Remaining gaps need source diversity (player communities with critical sentiment), not more ranking tuning.
 
+Adding the Tieba community source (174 threads, 3330 comments; final 693-pair annotation file) continued the trend: nDCG@10 0.677 -> 0.728, with the largest gains on negative-sentiment questions (Q04 0.69 -> 0.80, Q08 0.66 -> 0.84, Q12 0.46 -> 0.68). Recall@10 rose only 0.565 -> 0.587 because each new source also adds newly-retrievable relevant articles to the union target set — the gate keeps moving, so nDCG@10 is the steadier progress metric across corpus expansions.
+
 ## Operational Commands
 
 ```text

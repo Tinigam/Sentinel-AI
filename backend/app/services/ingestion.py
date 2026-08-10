@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.collectors.bilibili import BilibiliClient, BilibiliError, format_comments_section
+from app.collectors.tieba import TiebaClient, TiebaError, format_replies_section
 from app.collectors.official_pages import discover_announcements, extract_title, fetch_html, html_to_text
 from app.models.entities import Article, ArticleTopic, CommunityComment, Source, Topic
 from app.services.community import compute_comment_metrics
@@ -443,6 +444,189 @@ def ingest_bilibili(db: Session) -> dict[str, int]:
         "accounts": len(accounts),
         "failed_accounts": failed_accounts,
         "failed_items": failed_items,
+        "inserted": inserted,
+        "duplicate": duplicate,
+        "classified": classified,
+        "comments_stored": comments_stored,
+        "metrics_computed": metrics_computed,
+    }
+
+
+TIEBA_REPLIES_PER_THREAD = 30
+TIEBA_HOT_REPLIES_IN_CONTENT = 10
+
+
+def load_tieba_forums() -> list[dict]:
+    settings = get_settings()
+    if not settings.sources_config_path.exists():
+        return []
+    with settings.sources_config_path.open(encoding="utf-8") as file:
+        configured = yaml.safe_load(file) or {}
+    forums = []
+    for item in configured.get("tieba_forums", []):
+        if not item.get("enabled", True):
+            continue
+        forums.append(
+            {
+                "name": item["name"],
+                "kw": item["kw"],
+                "topic": item["topic"],
+                "source_type": item.get("source_type", "community"),
+                "trust_tier": item.get("trust_tier", "unverified"),
+            }
+        )
+    return forums
+
+
+def ingest_tieba(db: Session) -> dict[str, int]:
+    settings = get_settings()
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    forums = load_tieba_forums()
+    client = TiebaClient()
+    inserted = duplicate = classified = failed_forums = failed_items = skipped_threads = 0
+    comments_stored = metrics_computed = 0
+    for forum in forums:
+        topic = topic_by_slug.get(forum["topic"])
+        if topic is None:
+            failed_forums += 1
+            continue
+        source = get_or_create_source(
+            db,
+            {
+                "name": forum["name"],
+                "feed_url": f"https://tieba.baidu.com/f?kw={forum['kw']}",
+                "source_type": forum["source_type"],
+                "trust_tier": forum["trust_tier"],
+            },
+        )
+        try:
+            threads = client.forum_threads(
+                forum["kw"], limit=settings.tieba_threads_per_forum
+            )
+        except (TiebaError, OSError, ValueError):
+            failed_forums += 1
+            continue
+        for thread in threads:
+            # Threads with almost no replies are drive-by posts, not discussion.
+            if thread["reply_num"] < settings.tieba_min_replies:
+                skipped_threads += 1
+                continue
+            url = f"https://tieba.baidu.com/p/{thread['tid']}"
+            clean_url = canonical(url)
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url) | (Article.canonical_url == clean_url)
+                )
+            )
+            if exists:
+                duplicate += 1
+                continue
+            try:
+                posts = client.thread_posts(thread["tid"], limit=TIEBA_REPLIES_PER_THREAD)
+            except (TiebaError, OSError, ValueError):
+                failed_items += 1
+                continue
+            if not posts:
+                failed_items += 1
+                continue
+            first = next((post for post in posts if post["floor"] == 1), posts[0])
+            replies = [post for post in posts if post is not first]
+            body = first["text"].strip()
+            title = thread["title"].strip() or body[:50]
+            if not title:
+                failed_items += 1
+                continue
+            hot = sorted(replies, key=lambda post: post["like"], reverse=True)[
+                :TIEBA_HOT_REPLIES_IN_CONTENT
+            ]
+            replies_section = format_replies_section(
+                [{"message": post["text"], "like": post["like"]} for post in hot]
+            )
+            text = f"{body}\n\n{replies_section}".strip()[:OFFICIAL_CONTENT_LIMIT]
+            created = thread["create_time"] or first["time"]
+            digest = hashlib.sha256((title + text).encode()).hexdigest()
+            article = Article(
+                source_id=source.id,
+                title=title,
+                summary=(body or text)[:500],
+                content=text,
+                original_url=url,
+                canonical_url=clean_url,
+                source_name=source.name,
+                source_domain=source.domain,
+                published_at=datetime.fromtimestamp(created, UTC) if created else None,
+                title_hash=hashlib.sha256(title.encode()).hexdigest(),
+                content_hash=digest,
+                content_type="community_post",
+                is_intelligence=True,
+            )
+            db.add(article)
+            db.flush()
+            db.add(
+                ArticleTopic(
+                    article_id=article.id, topic_id=topic.id, matched_keywords=["tieba_forum"]
+                )
+            )
+            db.flush()
+            db.refresh(article, attribute_names=["topic_links"])
+            classified += classify_article(db, article)
+            inserted += 1
+            # Distortion detection: store the first reply floors of every thread.
+            seen_ids: set[str] = set()
+            for index, reply in enumerate(replies[:TIEBA_REPLIES_PER_THREAD]):
+                comment_id = reply["post_id"] or f"{thread['tid']}_{reply['floor'] or index + 2}"
+                if comment_id in seen_ids:
+                    continue
+                seen_ids.add(comment_id)
+                seen = db.scalar(
+                    select(CommunityComment.id).where(
+                        CommunityComment.platform == "tieba",
+                        CommunityComment.comment_id == comment_id,
+                    )
+                )
+                if seen:
+                    continue
+                db.add(
+                    CommunityComment(
+                        article_id=article.id,
+                        platform="tieba",
+                        comment_id=comment_id,
+                        user_mid=reply["user_key"][:32],
+                        message=reply["text"],
+                        like_count=reply["like"],
+                        published_at=(
+                            datetime.fromtimestamp(reply["time"], UTC) if reply["time"] else None
+                        ),
+                    )
+                )
+                comments_stored += 1
+            db.flush()
+            rows = db.scalars(
+                select(CommunityComment).where(CommunityComment.article_id == article.id)
+            ).all()
+            # Too few comments make concentration metrics meaningless.
+            if len(rows) >= 30:
+                article.comment_metrics = compute_comment_metrics(
+                    [
+                        {
+                            "user_mid": row.user_mid,
+                            "message": row.message,
+                            "like": row.like_count,
+                            "ctime": (
+                                int(row.published_at.timestamp()) if row.published_at else None
+                            ),
+                        }
+                        for row in rows
+                    ]
+                )
+                metrics_computed += 1
+    db.commit()
+    return {
+        "forums": len(forums),
+        "failed_forums": failed_forums,
+        "failed_items": failed_items,
+        "skipped_threads": skipped_threads,
         "inserted": inserted,
         "duplicate": duplicate,
         "classified": classified,

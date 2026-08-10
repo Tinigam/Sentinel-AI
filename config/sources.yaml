@@ -97,3 +97,63 @@ bilibili_accounts:
     trust_tier: verified
     topic: delta-force
     mid: 3494376565115651
+# tieba_forums map each game topic to its Baidu Tieba forum (kw is the forum
+# name without the 吧 suffix). Threads become community articles whose content
+# is the opening post plus a 热门回复 section; the first reply floors of each
+# thread are stored in community_comments for distortion metrics.
+tieba_forums:
+  - name: 原神吧
+    source_type: community
+    trust_tier: unverified
+    topic: genshin-impact
+    kw: 原神
+  - name: 崩坏星穹铁道吧
+    source_type: community
+    trust_tier: unverified
+    topic: honkai-star-rail
+    kw: 崩坏星穹铁道
+  - name: 绝区零吧
+    source_type: community
+    trust_tier: unverified
+    topic: zenless-zone-zero
+    kw: 绝区零
+  - name: 鸣潮吧
+    source_type: community
+    trust_tier: unverified
+    topic: wuthering-waves
+    kw: 鸣潮
+  - name: 明日方舟吧
+    source_type: community
+    trust_tier: unverified
+    topic: arknights
+    kw: 明日方舟
+  - name: 明日方舟终末地吧
+    source_type: community
+    trust_tier: unverified
+    topic: arknights-endfield
+    kw: 明日方舟终末地
+  - name: 少女前线2吧
+    source_type: community
+    trust_tier: unverified
+    topic: girls-frontline-2-exilium
+    kw: 少女前线2
+  - name: 王者荣耀吧
+    source_type: community
+    trust_tier: unverified
+    topic: honor-of-kings
+    kw: 王者荣耀
+  - name: 第五人格吧
+    source_type: community
+    trust_tier: unverified
+    topic: identity-v
+    kw: 第五人格
+  - name: 无畏契约吧
+    source_type: community
+    trust_tier: unverified
+    topic: valorant
+    kw: 无畏契约
+  - name: 三角洲行动吧
+    source_type: community
+    trust_tier: unverified
+    topic: delta-force
+    kw: 三角洲行动
