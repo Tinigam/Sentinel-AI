@@ -424,7 +424,16 @@ def ingest_bilibili(db: Session) -> dict[str, int]:
                 if len(rows) >= 30:
                     newest_article.comment_metrics = compute_comment_metrics(
                         [
-                            {"user_mid": row.user_mid, "message": row.message, "like": row.like_count}
+                            {
+                                "user_mid": row.user_mid,
+                                "message": row.message,
+                                "like": row.like_count,
+                                "ctime": (
+                                    int(row.published_at.timestamp())
+                                    if row.published_at
+                                    else None
+                                ),
+                            }
                             for row in rows
                         ]
                     )

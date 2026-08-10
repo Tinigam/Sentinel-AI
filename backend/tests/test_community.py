@@ -1,5 +1,8 @@
 from app.services.community import (
+    COORDINATION_MIN_USERS,
+    COORDINATION_WINDOW_SECONDS,
     compute_comment_metrics,
+    coordinated_template_burst,
     gini,
     normalize_message,
     template_key,
@@ -64,3 +67,36 @@ def test_metrics_flags_copypasta_and_concentration() -> None:
 
 def test_metrics_empty() -> None:
     assert compute_comment_metrics([]) == {"total_comments": 0, "distortion_flags": ["no_comments"]}
+
+
+def test_coordinated_burst_flags_same_template_in_short_window() -> None:
+    base = 1_700_000_000
+    comments = [
+        {
+            "user_mid": f"brigader{user}",
+            "message": "策划道歉！重做异格！",
+            "like": 0,
+            "ctime": base + user * 120,  # 6 users within 12 minutes
+        }
+        for user in range(COORDINATION_MIN_USERS + 1)
+    ]
+    assert coordinated_template_burst(comments) == COORDINATION_MIN_USERS + 1
+    metrics = compute_comment_metrics(comments)
+    assert "coordinated_burst" in metrics["distortion_flags"]
+    assert metrics["coordinated_max_users"] == COORDINATION_MIN_USERS + 1
+
+
+def test_coordinated_burst_ignores_spread_out_and_missing_timestamps() -> None:
+    base = 1_700_000_000
+    spread = [
+        {
+            "user_mid": f"user{user}",
+            "message": "策划道歉！重做异格！",
+            "like": 0,
+            "ctime": base + user * (COORDINATION_WINDOW_SECONDS + 60),
+        }
+        for user in range(6)
+    ]
+    assert coordinated_template_burst(spread) == 1
+    legacy = [{"user_mid": f"user{user}", "message": "同上", "like": 0} for user in range(6)]
+    assert coordinated_template_burst(legacy) == 0

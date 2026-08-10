@@ -51,6 +51,8 @@ Setting `RERANK_MODEL` (e.g. `gte-rerank-v2` on `RERANK_BASE_URL`) re-orders the
 
 Neither rerank nor multi-query expansion cleared the 0.80 Recall@10 gate: the residual gap is corpus coverage (e.g. no negative articles at all for some games) and aggregation-style questions that per-article retrieval cannot answer, not ranking quality. Earlier per-run scores were inflated by candidate-pool bias — annotations must cover the union of compared runs' candidates.
 
+Corpus scaling confirms the coverage hypothesis (same final 638-pair annotation file): enlarging the corpus from 750 to 915 articles (+22%, 25 videos per bilibili account) lifted Recall@10 from 0.460 to 0.637 and nDCG@10 from 0.563 to 0.733. Remaining gaps need source diversity (player communities with critical sentiment), not more ranking tuning.
+
 ## Operational Commands
 
 ```text

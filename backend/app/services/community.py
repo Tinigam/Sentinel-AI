@@ -15,6 +15,10 @@ from app.services.sentiment import classify_text
 
 TEMPLATE_MIN_CLUSTER = 3
 NORMALIZED_PREFIX = 50
+# CooRTweet-style coordination: same template from many distinct users inside
+# a short time window is a strong brigading signal.
+COORDINATION_WINDOW_SECONDS = 1800
+COORDINATION_MIN_USERS = 5
 
 # CJK chars, letters and digits are kept; emoji, punctuation and whitespace are dropped.
 _STRIP_RE = re.compile(r"[^\w一-鿿]+")
@@ -72,6 +76,29 @@ def like_weighted_sentiment(comments: list[dict]) -> dict[str, float]:
     return totals
 
 
+def coordinated_template_burst(comments: list[dict]) -> int:
+    """Max distinct users posting the same template within one sliding window.
+    Comments without a timestamp are ignored (metric stays 0 for legacy data)."""
+    by_template: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for comment in comments:
+        ctime = comment.get("ctime")
+        if ctime:
+            by_template[template_key(comment["message"])].append((int(ctime), comment["user_mid"]))
+    max_users = 0
+    for entries in by_template.values():
+        if len({user for _, user in entries}) < TEMPLATE_MIN_CLUSTER:
+            continue
+        entries.sort()
+        for index, (start, _) in enumerate(entries):
+            window_users = {
+                user
+                for ts, user in entries[index:]
+                if ts - start <= COORDINATION_WINDOW_SECONDS
+            }
+            max_users = max(max_users, len(window_users))
+    return max_users
+
+
 def compute_comment_metrics(comments: list[dict]) -> dict:
     """Full distortion report for one video's comment section."""
     if not comments:
@@ -108,6 +135,9 @@ def compute_comment_metrics(comments: list[dict]) -> dict:
     weighted_negative = weighted["negative"] / weighted_total if weighted_total else 0.0
     if raw_negative - weighted_negative > 0.15:
         flags.append("like_divergence")
+    coordinated_users = coordinated_template_burst(comments)
+    if coordinated_users >= COORDINATION_MIN_USERS:
+        flags.append("coordinated_burst")
 
     return {
         "total_comments": total,
@@ -117,6 +147,8 @@ def compute_comment_metrics(comments: list[dict]) -> dict:
         "top5_share": round(top5, 4),
         "template_share": round(template_share, 4),
         "top_templates": top_templates,
+        "coordinated_max_users": coordinated_users,
+        "coordination_window_minutes": COORDINATION_WINDOW_SECONDS // 60,
         "sentiment_raw": raw,
         "sentiment_user_voted": user_voted_sentiment(per_user),
         "sentiment_like_weighted": {key: round(value, 1) for key, value in weighted.items()},
