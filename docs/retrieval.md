@@ -36,6 +36,21 @@ Remote failures raise `EmbeddingError` instead of falling back mid-run, so the i
 
 For each article rank `r` in a retrieval list, Sentinel-AI adds `1 / (60 + r)` to its score. Results from full-text and vector retrieval are combined by article ID, preventing multiple chunks from a single article from crowding out source diversity.
 
+## Reranker (optional, currently disabled)
+
+Setting `RERANK_MODEL` (e.g. `gte-rerank-v2` on `RERANK_BASE_URL`) re-orders the top-30 RRF shortlist with a cross-encoder; failures keep RRF order. Union-pool evaluation on 2026-08-10 (512 graded pairs, 30 questions) measured it as a **net regression** on this corpus: Recall@10 0.641 vs 0.692 for plain RRF, because rerank documents derived from chunks were title-echo noise. It stays disabled (`RERANK_MODEL=` empty) until re-validated with better documents or a stronger model.
+
+## Measured baselines (union-pool annotation, 2026-08-10)
+
+| Retrieval | Recall@10 | nDCG@10 |
+| --- | ---: | ---: |
+| local-hash.v1 | 0.432 | 0.390 |
+| text-embedding-v4 (RRF) | 0.692 | 0.695 |
+| + gte-rerank-v2 | 0.641 | 0.629 |
+| + LLM multi-query | 0.685 | 0.698 |
+
+Neither rerank nor multi-query expansion cleared the 0.80 Recall@10 gate: the residual gap is corpus coverage (e.g. no negative articles at all for some games) and aggregation-style questions that per-article retrieval cannot answer, not ranking quality. Earlier per-run scores were inflated by candidate-pool bias — annotations must cover the union of compared runs' candidates.
+
 ## Operational Commands
 
 ```text

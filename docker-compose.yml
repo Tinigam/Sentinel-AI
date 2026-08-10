@@ -29,6 +29,8 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen-plus}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
+      RERANK_MODEL: ${RERANK_MODEL:-}
+      RERANK_BASE_URL: ${RERANK_BASE_URL:-https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
     ports: ["8000:8000"]
     depends_on:
       db:

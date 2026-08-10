@@ -15,8 +15,15 @@ from urllib.request import urlopen
 
 def request_json(api_base_url: str, path: str, params: dict[str, str]) -> dict:
     query = urlencode(params)
-    with urlopen(f"{api_base_url}{path}?{query}", timeout=30) as response:  # nosec B310
-        return json.load(response)
+    url = f"{api_base_url}{path}?{query}"
+    last_error: OSError | None = None
+    for attempt in range(3):
+        try:
+            with urlopen(url, timeout=90) as response:  # nosec B310
+                return json.load(response)
+        except OSError as error:  # timeout or transient network failure
+            last_error = error
+    raise last_error  # type: ignore[misc]
 
 
 def git_sha() -> str | None:

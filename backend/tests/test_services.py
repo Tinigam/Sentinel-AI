@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from app.services import indexing, rag, sentiment
+from app.services import indexing, rag, retrieval, sentiment
 from app.core.config import Settings
 from app.services.indexing import EMBEDDING_DIMENSIONS, chunk_text, embed
 from app.services.llm import LLMError
@@ -149,3 +149,53 @@ def test_answer_with_llm_rejects_malformed_response(monkeypatch) -> None:
     monkeypatch.setattr(rag, "chat_json", lambda *args, **kwargs: {"summary_points": []})
     with pytest.raises(LLMError):
         rag._answer_with_llm("问题", [])
+
+
+def test_rerank_maps_relevance_scores_by_document_index(monkeypatch) -> None:
+    monkeypatch.setattr(
+        retrieval,
+        "get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            rerank_model="test-rerank",
+            rerank_base_url="https://example.com/rerank",
+        ),
+    )
+    captured = {}
+
+    def fake_urlopen(request, timeout=0):
+        captured["body"] = json.loads(request.data.decode())
+        payload = {
+            "output": {
+                "results": [
+                    {"index": 2, "relevance_score": 0.91},
+                    {"index": 0, "relevance_score": 0.42},
+                    {"index": 1, "relevance_score": 0.07},
+                ]
+            }
+        }
+        return io.BytesIO(json.dumps(payload).encode())
+
+    monkeypatch.setattr(retrieval.urllib.request, "urlopen", fake_urlopen)
+    assert retrieval._rerank("终末地二测", ["a", "b", "c"]) == [0.42, 0.07, 0.91]
+    assert captured["body"]["model"] == "test-rerank"
+    assert captured["body"]["input"]["query"] == "终末地二测"
+
+
+def test_rerank_raises_immediately_on_client_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        retrieval,
+        "get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            rerank_model="test-rerank",
+            rerank_base_url="https://example.com/rerank",
+        ),
+    )
+
+    def failing_urlopen(request, timeout=0):
+        raise retrieval.urllib.error.HTTPError(request.full_url, 400, "bad request", {}, None)
+
+    monkeypatch.setattr(retrieval.urllib.request, "urlopen", failing_urlopen)
+    with pytest.raises(retrieval.RerankError):
+        retrieval._rerank("q", ["a"])

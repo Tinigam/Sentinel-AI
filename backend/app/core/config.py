@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_model: str = "qwen-plus"
     embedding_model: str = "text-embedding-v4"
+    rerank_model: str = ""
+    rerank_base_url: str = (
+        "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    )
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
