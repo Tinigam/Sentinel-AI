@@ -43,6 +43,7 @@ def output(article: Article, db: Session) -> dict:
         "published_at": article.published_at,
         "content_type": article.content_type,
         "is_intelligence": article.is_intelligence,
+        "comment_metrics": article.comment_metrics,
         "topics": [
             {"slug": link.topic.slug, "display_name": link.topic.display_name}
             for link in article.topic_links
