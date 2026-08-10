@@ -10,8 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.collectors.bilibili import BilibiliClient, format_comments_section
 from app.collectors.official_pages import discover_announcements, extract_title, fetch_html, html_to_text
-from app.models.entities import Article, ArticleTopic, Source, Topic
+from app.models.entities import Article, ArticleTopic, CommunityComment, Source, Topic
+from app.services.community import compute_comment_metrics
 from app.services.content import classify_content_type
 from app.services.sentiment import classify_article
 
@@ -259,4 +261,182 @@ def ingest_official_pages(db: Session) -> dict[str, int]:
         "inserted": inserted,
         "duplicate": duplicate,
         "classified": classified,
+    }
+
+
+def load_bilibili_accounts() -> list[dict]:
+    settings = get_settings()
+    if not settings.sources_config_path.exists():
+        return []
+    with settings.sources_config_path.open(encoding="utf-8") as file:
+        configured = yaml.safe_load(file) or {}
+    accounts = []
+    for item in configured.get("bilibili_accounts", []):
+        if not item.get("enabled", True):
+            continue
+        accounts.append(
+            {
+                "name": item["name"],
+                "mid": int(item["mid"]),
+                "topic": item["topic"],
+                "source_type": item.get("source_type", "official"),
+                "trust_tier": item.get("trust_tier", "verified"),
+            }
+        )
+    return accounts
+
+
+def ingest_bilibili(db: Session) -> dict[str, int]:
+    settings = get_settings()
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    accounts = load_bilibili_accounts()
+    client = BilibiliClient(cookie=settings.bilibili_cookie)
+    client.bootstrap()
+    inserted = duplicate = classified = failed_accounts = failed_items = 0
+    comments_stored = metrics_computed = 0
+    for account in accounts:
+        topic = topic_by_slug.get(account["topic"])
+        if topic is None:
+            failed_accounts += 1
+            continue
+        source = get_or_create_source(
+            db,
+            {
+                "name": account["name"],
+                "feed_url": f"https://space.bilibili.com/{account['mid']}/video",
+                "source_type": account["source_type"],
+                "trust_tier": account["trust_tier"],
+            },
+        )
+        try:
+            videos = client.account_videos(account["mid"], limit=settings.bilibili_videos_per_account)
+        except Exception:
+            failed_accounts += 1
+            continue
+        for video in videos:
+            url = f"https://www.bilibili.com/video/{video['bvid']}"
+            clean_url = canonical(url)
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url) | (Article.canonical_url == clean_url)
+                )
+            )
+            if exists:
+                duplicate += 1
+                continue
+            try:
+                comments = client.video_comments(
+                    video["aid"], limit=settings.bilibili_comments_per_video
+                )
+            except Exception:
+                failed_items += 1
+                comments = []
+            body = video["description"].strip()
+            comments_section = format_comments_section(comments)
+            text = f"{body}\n\n{comments_section}".strip()[:OFFICIAL_CONTENT_LIMIT]
+            title = video["title"].strip()
+            if not title:
+                failed_items += 1
+                continue
+            digest = hashlib.sha256((title + text).encode()).hexdigest()
+            article = Article(
+                source_id=source.id,
+                title=title,
+                summary=(body or text)[:500],
+                content=text,
+                original_url=url,
+                canonical_url=clean_url,
+                source_name=source.name,
+                source_domain=source.domain,
+                published_at=datetime.fromtimestamp(video["pubdate"], UTC) if video["pubdate"] else None,
+                title_hash=hashlib.sha256(title.encode()).hexdigest(),
+                content_hash=digest,
+                content_type="official_announcement",
+                is_intelligence=True,
+            )
+            db.add(article)
+            db.flush()
+            db.add(
+                ArticleTopic(
+                    article_id=article.id, topic_id=topic.id, matched_keywords=["bilibili_official"]
+                )
+            )
+            db.flush()
+            db.refresh(article, attribute_names=["topic_links"])
+            classified += classify_article(db, article)
+            inserted += 1
+        # Distortion detection: deep-crawl comments of the newest video per account.
+        if videos and settings.bilibili_comment_pages > 0:
+            newest = videos[0]
+            newest_url = f"https://www.bilibili.com/video/{newest['bvid']}"
+            newest_article = db.scalar(
+                select(Article).where(
+                    (Article.original_url == newest_url)
+                    | (Article.canonical_url == canonical(newest_url))
+                )
+            )
+            if newest_article is not None:
+                try:
+                    full = client.video_comments_full(
+                        newest["aid"], max_pages=settings.bilibili_comment_pages
+                    )
+                except Exception:
+                    failed_items += 1
+                    full = []
+                seen_ids: set[str] = set()
+                for comment in full:
+                    if comment["comment_id"] in seen_ids:
+                        continue
+                    seen_ids.add(comment["comment_id"])
+                    seen = db.scalar(
+                        select(CommunityComment.id).where(
+                            CommunityComment.platform == "bilibili",
+                            CommunityComment.comment_id == comment["comment_id"],
+                        )
+                    )
+                    if seen:
+                        continue
+                    db.add(
+                        CommunityComment(
+                            article_id=newest_article.id,
+                            platform="bilibili",
+                            comment_id=comment["comment_id"],
+                            user_mid=comment["user_mid"],
+                            message=comment["message"],
+                            like_count=comment["like"],
+                            published_at=(
+                                datetime.fromtimestamp(comment["ctime"], UTC)
+                                if comment["ctime"]
+                                else None
+                            ),
+                        )
+                    )
+                    comments_stored += 1
+                db.flush()
+                rows = db.scalars(
+                    select(CommunityComment).where(
+                        CommunityComment.article_id == newest_article.id
+                    )
+                ).all()
+                # Anonymous access may yield only a handful of hot comments;
+                # too few comments make concentration metrics meaningless.
+                if len(rows) >= 30:
+                    newest_article.comment_metrics = compute_comment_metrics(
+                        [
+                            {"user_mid": row.user_mid, "message": row.message, "like": row.like_count}
+                            for row in rows
+                        ]
+                    )
+                    metrics_computed += 1
+    db.commit()
+    return {
+        "accounts": len(accounts),
+        "failed_accounts": failed_accounts,
+        "failed_items": failed_items,
+        "inserted": inserted,
+        "duplicate": duplicate,
+        "classified": classified,
+        "comments_stored": comments_stored,
+        "metrics_computed": metrics_computed,
     }

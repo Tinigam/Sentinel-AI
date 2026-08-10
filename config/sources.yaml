@@ -37,3 +37,63 @@ official_pages:
     trust_tier: verified
     topic: arknights-endfield
     url: https://endfield.gryphline.com/zh-tw/news
+# bilibili_accounts are official game accounts on Bilibili. Videos are stored as
+# official_announcement articles; top comments are aggregated into the article
+# content as the player-voice sentiment signal. mid values were resolved via the
+# bilibili search API and verified against each account's official_verify label.
+bilibili_accounts:
+  - name: Genshin bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: genshin-impact
+    mid: 401742377
+  - name: Honkai Star Rail bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: honkai-star-rail
+    mid: 1340190821
+  - name: Zenless Zone Zero bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: zenless-zone-zero
+    mid: 1636034895
+  - name: Wuthering Waves bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: wuthering-waves
+    mid: 1955897084
+  - name: Arknights bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: arknights
+    mid: 161775300
+  - name: Arknights Endfield bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: arknights-endfield
+    mid: 1265652806
+  - name: Girls Frontline 2 bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: girls-frontline-2-exilium
+    mid: 697654195
+  - name: Honor of Kings bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: honor-of-kings
+    mid: 57863910
+  - name: Identity V bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: identity-v
+    mid: 211005705
+  - name: Valorant bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: valorant
+    mid: 147546636
+  - name: Delta Force bilibili official
+    source_type: official
+    trust_tier: verified
+    topic: delta-force
+    mid: 3494376565115651

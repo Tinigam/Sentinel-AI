@@ -38,3 +38,18 @@ The first command recomputes article types and creates missing sentiments for el
 official_pages supports static public announcement lists. Each configured page has a first-party URL, a topic, and official / erified provenance metadata. The collector intentionally accepts only same-domain announcement-like links; dynamic sites that render no links are skipped rather than bypassed.
 
 `POST /api/v1/ingest` runs both RSS ingestion and official page discovery. For server-rendered sites that embed links in JSON payloads instead of anchors (for example Next.js pages), discovery falls back to extracting same-domain announcement URLs from the raw document; titles are then read from each detail page's `<title>`. Pure client-rendered shells (for example sr.mihoyo.com) still yield nothing and need site-specific adapters.
+## Bilibili official accounts
+
+`bilibili_accounts` in `sources.yaml` maps each game to its verified official Bilibili account (`mid`, resolved via the search API against `official_verify` labels). Each recent video becomes an `official_announcement` article whose content is the video description plus a `热门评论` section of top comments — the player-voice signal for sentiment analysis.
+
+The collector uses the public web API with WBI signing. The comment endpoint allows anonymous access; the account video list may be rejected by risk control (HTTP 412 / code -352) from datacenter or overseas IPs, in which case the account is skipped and counted in `failed_accounts`. Setting `BILIBILI_COOKIE` (a logged-in `SESSDATA=...` cookie, placed in the repo-root `.env` that Compose substitutes) makes collection reliable. Requests are throttled and each video is deduplicated by its canonical URL, so repeated ingestion only fetches comments for new videos.
+## Comment distortion detection
+
+For the newest video of each configured account, the collector deep-crawls top-level comments in time order (`BILIBILI_COMMENT_PAGES`, default 25 pages ≈ 500 comments) into `community_comments` and stores a distortion report on the article's `comment_metrics`:
+
+- `gini`, `top1_share`, `top5_share`: concentration of comments across users (a vocal-minority detector; organic sections rarely exceed 0.7 top-5% share).
+- `template_share` and `top_templates`: copypasta brigading — comments clustered by normalized-text hash (emoji, punctuation and whitespace stripped), clusters of 3+ counted once.
+- `sentiment_raw` vs `sentiment_user_voted` (one user one vote) vs `sentiment_like_weighted`: divergence between these three readings marks manipulated volume.
+- `distortion_flags`: `copypasta_brigade` (template share > 0.3), `high_concentration` (top-5% users > 0.7), `like_divergence` (raw negative share exceeds like-weighted by > 0.15).
+
+These metrics are confidence metadata, not filters: flagged articles stay indexed, but dashboards and RAG answers should treat their raw comment volume as unreliable.

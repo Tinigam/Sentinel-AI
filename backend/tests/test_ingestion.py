@@ -93,3 +93,30 @@ def test_load_official_pages_reads_enabled_entries(monkeypatch, tmp_path: Path) 
     assert ingestion.load_official_pages() == [
         {"name": "Official news", "url": "https://example.com/news", "topic": "arknights"}
     ]
+
+
+def test_load_bilibili_accounts_reads_enabled_entries(monkeypatch, tmp_path: Path) -> None:
+    config = tmp_path / "sources.yaml"
+    config.write_text(
+        "bilibili_accounts:\n"
+        "  - name: Arknights bilibili official\n"
+        "    mid: 161775300\n"
+        "    topic: arknights\n"
+        "  - name: Disabled account\n"
+        "    enabled: false\n"
+        "    mid: 1\n"
+        "    topic: arknights\n",
+        encoding="utf-8",
+    )
+    settings = SimpleNamespace(sources_config_path=config)
+    monkeypatch.setattr(ingestion, "get_settings", lambda: settings)
+
+    assert ingestion.load_bilibili_accounts() == [
+        {
+            "name": "Arknights bilibili official",
+            "mid": 161775300,
+            "topic": "arknights",
+            "source_type": "official",
+            "trust_tier": "verified",
+        }
+    ]

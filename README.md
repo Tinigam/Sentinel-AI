@@ -49,6 +49,7 @@ Hybrid RAG 问答与来源引用
 ### V1 包含
 
 - 游戏官网与官方公告
+- 游戏 B 站官方号视频与热门评论（玩家舆论信号）
 - 游戏媒体新闻，例如 GameLook、游研社、游戏葡萄、3DM
 - GDELT 或其他公开新闻数据的历史回填
 - RSS 或公开源的增量采集
@@ -232,7 +233,7 @@ Sentinel-AI/
 ├── backend/                 # FastAPI 服务
 │   ├── app/
 │   │   ├── api/             # 新闻、Dashboard、问答接口
-│   │   ├── collectors/      # RSS、公告、GDELT 采集
+│   │   ├── collectors/      # RSS、公告、B 站官方号采集
 │   │   ├── processing/      # 清洗、去重、主题与情感分析
 │   │   ├── rag/             # 切分、Embedding、检索、引用校验
 │   │   ├── models/          # 数据模型与迁移

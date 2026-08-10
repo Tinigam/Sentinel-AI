@@ -21,6 +21,10 @@
 | `EMBEDDING_MODEL` | provider-selected | Must match indexed vectors |
 | `EMBEDDING_DIMENSIONS` | provider-selected | Required for pgvector schema |
 | `INGEST_API_KEY` | `local-dev-key` | Required outside development for `POST /ingest` |
+| `BILIBILI_COOKIE` | *(empty)* | Optional logged-in Bilibili cookie (`SESSDATA=...`); anonymous access to account video lists may be blocked by risk control |
+| `BILIBILI_VIDEOS_PER_ACCOUNT` | `5` | Recent videos collected per official account |
+| `BILIBILI_COMMENTS_PER_VIDEO` | `15` | Top comments aggregated into each video article |
+| `BILIBILI_COMMENT_PAGES` | `25` | Deep-crawl pages (20 comments each) for distortion detection on the newest video per account; `0` disables |
 | `LOG_LEVEL` | `INFO` | Use `DEBUG` only locally |
 | `REQUEST_TIMEOUT_SECONDS` | `30` | External request limit |
 | `MAX_ASK_QUESTION_LENGTH` | `1000` | Request validation limit |

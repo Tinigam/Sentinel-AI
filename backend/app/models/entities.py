@@ -44,6 +44,7 @@ class Article(Base):
     processing_status: Mapped[str] = mapped_column(String(20), default="cleaned")
     content_type: Mapped[str] = mapped_column(String(32), default="media_news", index=True)
     is_intelligence: Mapped[bool] = mapped_column(default=True, index=True)
+    comment_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     search_vector: Mapped[object | None] = mapped_column(TSVECTOR, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     topic_links: Mapped[list["ArticleTopic"]] = relationship(
@@ -59,6 +60,19 @@ class ArticleTopic(Base):
     matched_keywords: Mapped[list[str]] = mapped_column(JSONB, default=list)
     article: Mapped[Article] = relationship(back_populates="topic_links")
     topic: Mapped[Topic] = relationship()
+
+
+class CommunityComment(Base):
+    __tablename__ = "community_comments"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    article_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("articles.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32), default="bilibili")
+    comment_id: Mapped[str] = mapped_column(String(64))
+    user_mid: Mapped[str] = mapped_column(String(32), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    like_count: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("platform", "comment_id"),)
 
 
 class ArticleSentiment(Base):

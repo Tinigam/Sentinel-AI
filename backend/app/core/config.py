@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     rss_source_name: str = "Google News · Target Games"
     topics_config_path: Path = Path("/app/config/topics.yaml")
     sources_config_path: Path = Path("/app/config/sources.yaml")
+    bilibili_cookie: str = ""
+    bilibili_videos_per_account: int = 5
+    bilibili_comments_per_video: int = 15
+    bilibili_comment_pages: int = 25
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

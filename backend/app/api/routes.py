@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.db import get_db
 from app.models.entities import Article, ArticleSentiment, ArticleTopic, Topic
 from app.services.indexing import index_relevant_articles
-from app.services.ingestion import ingest_official_pages, ingest_rss
+from app.services.ingestion import ingest_bilibili, ingest_official_pages, ingest_rss
 from app.services.retrieval import hybrid_search
 from app.schemas import AskRequest
 from app.services.rag import answer_question
@@ -234,6 +234,7 @@ def ingest(x_ingest_key: str | None = Header(default=None), db: Session = Depend
         "status": "completed",
         "rss": ingest_rss(db),
         "official_pages": ingest_official_pages(db),
+        "bilibili": ingest_bilibili(db),
     }
 
 
