@@ -68,9 +68,18 @@ def _rerank(query: str, documents: list[str]) -> list[float]:
 
 def _recall(
     db: Session, query: str, topic: str | None, sentiment: str | None, model_name: str
-) -> tuple[list, list]:
+) -> tuple[list, list, list]:
     fts = select(Article.id).where(
         Article.search_vector.op("@@")(func.websearch_to_tsquery("simple", query))
+    )
+    # pg_trgm similarity lane: catches CJK queries the 'simple' FTS tokenizer
+    # treats as one lexeme (e.g. "最近原神有什么节奏").
+    text_expr = (Article.title + " " + func.coalesce(Article.content, "")).self_group()
+    trigram = (
+        select(Article.id)
+        .where(text_expr.op("%")(query))
+        .order_by(func.similarity(text_expr, query).desc())
+        .limit(RECALL_PER_LANE)
     )
     vector = select(
         ArticleChunk.article_id,
@@ -80,17 +89,22 @@ def _recall(
     if topic:
         topic_id = select(Topic.id).where(Topic.slug == topic).scalar_subquery()
         fts = fts.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
+        trigram = trigram.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
         vector = vector.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
     if sentiment:
         fts = fts.join(ArticleSentiment).where(
+            ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
+        )
+        trigram = trigram.join(ArticleSentiment).where(
             ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
         vector = vector.join(ArticleSentiment).where(
             ArticleSentiment.label == sentiment, ArticleSentiment.model_name == model_name
         )
     fts_ids = [row[0] for row in db.execute(fts.limit(RECALL_PER_LANE)).all()]
+    trigram_ids = [row[0] for row in db.execute(trigram).all()]
     vector_rows = db.execute(vector.order_by("distance").limit(RECALL_PER_LANE)).all()
-    return fts_ids, vector_rows
+    return fts_ids, trigram_ids, vector_rows
 
 
 def hybrid_search(
@@ -99,9 +113,11 @@ def hybrid_search(
     model_name = sentiment_model_name()
     scores: dict[object, float] = {}
     snippets: dict[object, str] = {}
-    fts_ids, vector_rows = _recall(db, query, topic, sentiment, model_name)
-    candidate_count = len(fts_ids) + len(vector_rows)
+    fts_ids, trigram_ids, vector_rows = _recall(db, query, topic, sentiment, model_name)
+    candidate_count = len(fts_ids) + len(trigram_ids) + len(vector_rows)
     for rank, article_id in enumerate(fts_ids, start=1):
+        scores[article_id] = scores.get(article_id, 0) + 1 / (RRF_K + rank)
+    for rank, article_id in enumerate(trigram_ids, start=1):
         scores[article_id] = scores.get(article_id, 0) + 1 / (RRF_K + rank)
     for rank, (article_id, content, _) in enumerate(vector_rows, start=1):
         scores[article_id] = scores.get(article_id, 0) + 1 / (RRF_K + rank)

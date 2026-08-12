@@ -63,3 +63,6 @@ GET /api/v1/search?query=崩坏%20星穹铁道&topic=honkai-star-rail
 ```
 
 `POST /api/v1/index` is development-only or protected by `X-Ingest-Key` outside development.
+## Trigram lane for CJK queries (2026-08-12)
+
+The `simple` FTS tokenizer treats a Chinese query string as one lexeme, so a third recall lane uses pg_trgm similarity over `title || ' ' || content` (GIN expression index, migration 0005). A/B on the same corpus and the same 735-pair union annotation file (30 questions): Recall@10 identical at 0.249, nDCG@10 0.317 with the lane vs 0.319 without — **neutral on the graded pool**. The pool is still dominated by pre-existing official/RSS/Tieba articles that both variants retrieve equally, and the absolute collapse vs the 0.728 baseline above is pure target-pool movement (new sources enlarged the union target set), not a ranking regression. The lane stays enabled: it is cheap, and live spot checks show it surfaces community posts for slang-heavy opinion queries (e.g. "鸣潮新版本争议") that FTS misses entirely. Caveat: `%` needs an explicit `self_group()` around the concatenated text expression — without it, Postgres precedence (`%` over `||`) mis-parses the predicate.

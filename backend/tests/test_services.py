@@ -1,6 +1,8 @@
 import io
 import json
 import math
+import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -199,3 +201,129 @@ def test_rerank_raises_immediately_on_client_error(monkeypatch) -> None:
     monkeypatch.setattr(retrieval.urllib.request, "urlopen", failing_urlopen)
     with pytest.raises(retrieval.RerankError):
         retrieval._rerank("q", ["a"])
+
+
+class _FakeResult:
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+
+    def all(self) -> list:
+        return self._rows
+
+
+class _FakeRecallSession:
+    """Dispatches recall-lane statements by their SQL; no real Postgres needed."""
+
+    def __init__(self, fts_ids: list, trigram_ids: list, vector_rows: list, articles: list) -> None:
+        self.fts_ids = fts_ids
+        self.trigram_ids = trigram_ids
+        self.vector_rows = vector_rows
+        self.articles = articles
+        self.statements: list[str] = []
+
+    def execute(self, statement: object) -> _FakeResult:
+        sql = str(statement)
+        self.statements.append(sql)
+        if "websearch_to_tsquery" in sql:
+            return _FakeResult([(article_id,) for article_id in self.fts_ids])
+        if "similarity" in sql:
+            return _FakeResult([(article_id,) for article_id in self.trigram_ids])
+        return _FakeResult(self.vector_rows)
+
+    def scalars(self, _statement: object) -> _FakeResult:
+        return _FakeResult(self.articles)
+
+
+def _article(article_id: uuid.UUID, title: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=article_id,
+        title=title,
+        content="原神新版本活动引发玩家讨论",
+        summary=None,
+        content_type="news",
+        source_name="bilibili",
+        published_at=None,
+        original_url="https://example.com/a",
+    )
+
+
+def test_hybrid_search_trigram_lane_recalls_chinese_query_misses(monkeypatch) -> None:
+    """FTS ('simple' tokenizer) misses a Chinese query; the trigram lane must
+    still bring the relevant article into the RRF candidates."""
+    _force_local_embedding(monkeypatch)
+    monkeypatch.setattr(retrieval, "get_settings", lambda: Settings(openai_api_key=""))
+    article_id = uuid.uuid4()
+    session = _FakeRecallSession(
+        fts_ids=[],  # websearch_to_tsquery('simple', ...) treats 中文整串为一个 lexeme
+        trigram_ids=[article_id],
+        vector_rows=[],
+        articles=[_article(article_id, "原神新版本节奏汇总")],
+    )
+
+    result = retrieval.hybrid_search(session, "最近原神有什么节奏")
+
+    assert result["method"] == "hybrid_rrf"
+    assert [item["article_id"] for item in result["results"]] == [str(article_id)]
+    assert result["candidate_count"] == 1
+    assert any("similarity" in sql for sql in session.statements)
+
+
+def test_recall_applies_topic_and_sentiment_filters_to_trigram_lane(monkeypatch) -> None:
+    _force_local_embedding(monkeypatch)
+    session = _FakeRecallSession(fts_ids=[], trigram_ids=[], vector_rows=[], articles=[])
+
+    retrieval._recall(session, "原神 节奏", topic="genshin", sentiment="negative", model_name="m")
+
+    trigram_sql = next(sql for sql in session.statements if "similarity" in sql)
+    assert "article_topics" in trigram_sql
+    assert "article_sentiments" in trigram_sql
+
+
+class _FakeSentimentSession:
+    def __init__(self, rows: list) -> None:
+        self.rows = rows
+
+    def execute(self, _statement: object) -> _FakeResult:
+        return _FakeResult(self.rows)
+
+
+def _retrieval_payload(article_ids: list[uuid.UUID]) -> dict:
+    return {
+        "method": "hybrid_rrf",
+        "candidate_count": len(article_ids),
+        "results": [
+            {
+                "article_id": str(article_id),
+                "title": f"标题 {index}",
+                "source": "bilibili",
+                "published_at": None,
+                "url": "https://example.com/a",
+                "snippet": "片段",
+            }
+            for index, article_id in enumerate(article_ids)
+        ],
+    }
+
+
+def test_answer_question_attaches_sentiment_to_sources(monkeypatch) -> None:
+    article_a, article_b = uuid.uuid4(), uuid.uuid4()
+    monkeypatch.setattr(rag, "hybrid_search", lambda *args, **kwargs: _retrieval_payload([article_a, article_b]))
+    monkeypatch.setattr(rag, "sentiment_model_name", lambda: "test-model")
+    monkeypatch.setattr(rag, "get_settings", lambda: Settings(openai_api_key=""))
+    rows = [SimpleNamespace(article_id=article_a, label="negative", score=-0.7)]
+
+    result = rag.answer_question(_FakeSentimentSession(rows), "原神最近的节奏?", None, None)
+
+    assert result["sources"][0]["sentiment"] == {"label": "negative", "score": -0.7}
+    assert result["sources"][1]["sentiment"] is None
+
+
+def test_answer_question_sources_sentiment_none_without_rows(monkeypatch) -> None:
+    article_a = uuid.uuid4()
+    monkeypatch.setattr(rag, "hybrid_search", lambda *args, **kwargs: _retrieval_payload([article_a]))
+    monkeypatch.setattr(rag, "sentiment_model_name", lambda: "test-model")
+    monkeypatch.setattr(rag, "get_settings", lambda: Settings(openai_api_key=""))
+
+    result = rag.answer_question(_FakeSentimentSession([]), "原神最近的节奏?", None, None)
+
+    assert result["sources"][0]["sentiment"] is None

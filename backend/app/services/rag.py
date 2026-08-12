@@ -1,10 +1,13 @@
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.models.entities import ArticleSentiment
 from app.services.llm import LLMError, chat_json
 from app.services.retrieval import hybrid_search
+from app.services.sentiment import sentiment_model_name
 
 GENERATOR_FALLBACK = "extractive.v1"
 
@@ -74,6 +77,21 @@ def _answer_extractive(sources: list[dict]) -> dict:
 
 def answer_question(db: Session, question: str, topic: str | None, sentiment: str | None) -> dict:
     retrieval = hybrid_search(db, query=question, topic=topic, sentiment=sentiment, limit=5)
+    sentiments: dict[str, dict] = {}
+    article_ids = [item["article_id"] for item in retrieval["results"]]
+    if article_ids:
+        rows = db.execute(
+            select(
+                ArticleSentiment.article_id, ArticleSentiment.label, ArticleSentiment.score
+            ).where(
+                ArticleSentiment.article_id.in_(article_ids),
+                ArticleSentiment.model_name == sentiment_model_name(),
+            )
+        ).all()
+        for row in rows:
+            sentiments.setdefault(
+                str(row.article_id), {"label": row.label, "score": row.score}
+            )
     sources = [
         {
             "id": f"article_{item['article_id']}",
@@ -82,6 +100,7 @@ def answer_question(db: Session, question: str, topic: str | None, sentiment: st
             "published_at": item["published_at"],
             "url": item["url"],
             "snippet": item["snippet"],
+            "sentiment": sentiments.get(item["article_id"]),
         }
         for item in retrieval["results"]
     ]
