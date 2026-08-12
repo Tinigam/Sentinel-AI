@@ -13,3 +13,6 @@ coverage/
 # Generated evaluation candidates and reviewer annotations
 docs/evaluation/runs/
 docs/evaluation/*.reviewed.csv
+
+# Playwright login sessions contain live cookies; never commit them
+sessions/

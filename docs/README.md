@@ -11,6 +11,7 @@
 | [Hybrid Retrieval](retrieval.md) | FTS、pgvector、RRF 与 Embedding Provider 边界 |
 | [Evidence-grounded RAG](rag.md) | 回答、引用校验与 LLM Provider 升级路径 |
 | [Environment](environment.md) | 本地、Docker、测试与生产环境变量规范 |
+| [Login Sessions](login-sessions.md) | 登录脚本、会话文件落盘与过期探测 |
 | [CI](ci.md) | GitHub Actions 质量门禁与发布前检查 |
 ## Evaluation
 

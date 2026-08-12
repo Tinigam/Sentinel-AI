@@ -1,0 +1,2 @@
+# Host-only dependency for scripts/login.py; never installed into containers.
+playwright>=1.40
