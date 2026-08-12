@@ -1,5 +1,6 @@
 import hashlib
 import html
+import logging
 import re
 from datetime import UTC, datetime
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -11,12 +12,18 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.collectors.bilibili import BilibiliClient, BilibiliError, format_comments_section
+from app.collectors.miyoushe import MiyousheClient, MiyousheError
+from app.collectors.nga import NgaClient, NgaError
 from app.collectors.tieba import TiebaClient, TiebaError, format_replies_section
+from app.collectors.weibo import WeiboClient, WeiboError
 from app.collectors.official_pages import discover_announcements, extract_title, fetch_html, html_to_text
 from app.models.entities import Article, ArticleTopic, CommunityComment, Source, Topic
 from app.services.community import compute_comment_metrics
 from app.services.content import classify_content_type
 from app.services.sentiment import classify_article
+from app.services.session_auth import load_cookie_header
+
+logger = logging.getLogger(__name__)
 
 
 def canonical(url: str) -> str:
@@ -633,3 +640,362 @@ def ingest_tieba(db: Session) -> dict[str, int]:
         "comments_stored": comments_stored,
         "metrics_computed": metrics_computed,
     }
+
+
+NGA_THREADS_PER_FORUM = 20
+NGA_FLOORS_PER_THREAD = 20
+WEIBO_POSTS_PER_QUERY = 20
+MIYOUSHE_POSTS_PER_FORUM = 20
+# getForumPostList keys boards by numeric gids; the public article URL uses the
+# game's path prefix instead.
+MIYOUSHE_GAME_PATH = {2: "ys", 6: "sr", 8: "zzz", 1: "bh3"}
+
+
+def _load_community_section(section: str, fields: tuple[str, ...]) -> list[dict]:
+    settings = get_settings()
+    if not settings.sources_config_path.exists():
+        return []
+    with settings.sources_config_path.open(encoding="utf-8") as file:
+        configured = yaml.safe_load(file) or {}
+    entries = []
+    for item in configured.get(section, []):
+        if not item.get("enabled", True):
+            continue
+        entry = {field: item[field] for field in fields}
+        entry["source_type"] = item.get("source_type", "community")
+        entry["trust_tier"] = item.get("trust_tier", "unverified")
+        entries.append(entry)
+    return entries
+
+
+def load_nga_forums() -> list[dict]:
+    return _load_community_section("nga_forums", ("name", "topic", "fid"))
+
+
+def load_weibo_queries() -> list[dict]:
+    return _load_community_section("weibo_queries", ("name", "topic", "query"))
+
+
+def load_miyoushe_forums() -> list[dict]:
+    return _load_community_section("miyoushe_forums", ("name", "topic", "gids", "forum_id"))
+
+
+def _store_article(
+    db: Session,
+    source: Source,
+    topic: Topic,
+    matched: str,
+    title: str,
+    body: str,
+    url: str,
+    created: int | None,
+    published: datetime | None = None,
+    canonical_url: str | None = None,
+) -> tuple[Article, int]:
+    """Shared community-post persistence: article + topic link + sentiment.
+
+    `canonical_url` overrides the default query-stripped form for sites whose
+    identity lives in the query string (NGA read.php?tid=...).
+    """
+    text = body.strip()[:OFFICIAL_CONTENT_LIMIT]
+    title = title.strip() or body[:50]
+    digest = hashlib.sha256((title + text).encode()).hexdigest()
+    article = Article(
+        source_id=source.id,
+        title=title,
+        summary=(body or text)[:500],
+        content=text,
+        original_url=url,
+        canonical_url=canonical_url if canonical_url is not None else canonical(url),
+        source_name=source.name,
+        source_domain=source.domain,
+        published_at=published if published is not None else (
+            datetime.fromtimestamp(created, UTC) if created else None
+        ),
+        title_hash=hashlib.sha256(title.encode()).hexdigest(),
+        content_hash=digest,
+        content_type="community_post",
+        is_intelligence=True,
+    )
+    db.add(article)
+    db.flush()
+    db.add(ArticleTopic(article_id=article.id, topic_id=topic.id, matched_keywords=[matched]))
+    db.flush()
+    db.refresh(article, attribute_names=["topic_links"])
+    classified = classify_article(db, article)
+    return article, classified
+
+
+def _store_comments(
+    db: Session, article: Article, platform: str, comments: list[dict]
+) -> tuple[int, int]:
+    """Dedup and store community_comments; compute metrics when enough rows."""
+    stored = metrics = 0
+    seen_ids: set[str] = set()
+    for comment in comments:
+        if comment["comment_id"] in seen_ids:
+            continue
+        seen_ids.add(comment["comment_id"])
+        seen = db.scalar(
+            select(CommunityComment.id).where(
+                CommunityComment.platform == platform,
+                CommunityComment.comment_id == comment["comment_id"],
+            )
+        )
+        if seen:
+            continue
+        db.add(
+            CommunityComment(
+                article_id=article.id,
+                platform=platform,
+                comment_id=comment["comment_id"],
+                user_mid=comment["user_mid"][:32],
+                message=comment["message"],
+                like_count=comment["like"],
+                published_at=(
+                    datetime.fromtimestamp(comment["ctime"], UTC) if comment["ctime"] else None
+                ),
+            )
+        )
+        stored += 1
+    db.flush()
+    rows = db.scalars(
+        select(CommunityComment).where(CommunityComment.article_id == article.id)
+    ).all()
+    # Too few comments make concentration metrics meaningless.
+    if len(rows) >= 30:
+        article.comment_metrics = compute_comment_metrics(
+            [
+                {
+                    "user_mid": row.user_mid,
+                    "message": row.message,
+                    "like": row.like_count,
+                    "ctime": int(row.published_at.timestamp()) if row.published_at else None,
+                }
+                for row in rows
+            ]
+        )
+        metrics = 1
+    return stored, metrics
+
+
+def ingest_nga(db: Session) -> dict[str, int]:
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    forums = load_nga_forums()
+    stats = {
+        "forums": len(forums),
+        "failed_forums": 0,
+        "failed_items": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "classified": 0,
+        "comments_stored": 0,
+        "metrics_computed": 0,
+    }
+    cookie = load_cookie_header("nga")
+    if cookie is None:
+        logger.warning("NGA session missing or malformed; skipping nga ingestion lane")
+        return stats
+    client = NgaClient(cookie=cookie)
+    for forum in forums:
+        topic = topic_by_slug.get(forum["topic"])
+        if topic is None:
+            stats["failed_forums"] += 1
+            continue
+        source = get_or_create_source(
+            db,
+            {
+                "name": forum["name"],
+                "feed_url": f"https://bbs.nga.cn/thread.php?fid={forum['fid']}",
+                "source_type": forum["source_type"],
+                "trust_tier": forum["trust_tier"],
+            },
+        )
+        try:
+            threads = client.forum_threads(forum["fid"], limit=NGA_THREADS_PER_FORUM)
+        except (NgaError, OSError, ValueError) as error:
+            logger.warning("NGA forum %s failed: %s", forum["fid"], error)
+            stats["failed_forums"] += 1
+            continue
+        for thread in threads:
+            # The thread id lives in the query string, so the query-stripped
+            # canonical form cannot deduplicate NGA threads; use the full URL.
+            url = f"https://bbs.nga.cn/read.php?tid={thread['tid']}"
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url) | (Article.canonical_url == url)
+                )
+            )
+            if exists:
+                stats["duplicate"] += 1
+                continue
+            try:
+                posts = client.thread_posts(thread["tid"], limit=NGA_FLOORS_PER_THREAD)
+            except (NgaError, OSError, ValueError) as error:
+                # Some threads return truncated JSON from read.php; keep the
+                # article (title + reply count) and skip its floors.
+                logger.warning("NGA thread %s floors unavailable: %s", thread["tid"], error)
+                stats["failed_items"] += 1
+                posts = []
+            opening = next((post for post in posts if post["floor"] == 0), None)
+            replies = [post for post in posts if post is not opening]
+            body = opening["text"] if opening else ""
+            body = f"{body}\n\n回复 {thread['reply_num']}".strip()
+            article, classified = _store_article(
+                db, source, topic, "nga_forum",
+                thread["title"] or body[:50], body, url, thread["create_time"],
+                canonical_url=url,
+            )
+            stats["classified"] += classified
+            stats["inserted"] += 1
+            stored, metrics = _store_comments(
+                db,
+                article,
+                "nga",
+                [
+                    {
+                        "comment_id": reply["post_id"] or f"{thread['tid']}_{reply['floor']}",
+                        "user_mid": reply["author"],
+                        "message": reply["text"],
+                        "like": 0,
+                        "ctime": reply["time"],
+                    }
+                    for reply in replies[:NGA_FLOORS_PER_THREAD]
+                ],
+            )
+            stats["comments_stored"] += stored
+            stats["metrics_computed"] += metrics
+    db.commit()
+    return stats
+
+
+def ingest_weibo(db: Session) -> dict[str, int]:
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    queries = load_weibo_queries()
+    stats = {
+        "queries": len(queries),
+        "failed_queries": 0,
+        "failed_items": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "classified": 0,
+    }
+    cookie = load_cookie_header("weibo")
+    if cookie is None:
+        logger.warning("Weibo session missing or malformed; skipping weibo ingestion lane")
+        return stats
+    client = WeiboClient(cookie=cookie)
+    for entry in queries:
+        topic = topic_by_slug.get(entry["topic"])
+        if topic is None:
+            stats["failed_queries"] += 1
+            continue
+        source = get_or_create_source(
+            db,
+            {
+                "name": entry["name"],
+                "feed_url": f"https://s.weibo.com/weibo?q={entry['query']}",
+                "source_type": entry["source_type"],
+                "trust_tier": entry["trust_tier"],
+            },
+        )
+        try:
+            posts = client.search_posts(entry["query"], limit=WEIBO_POSTS_PER_QUERY)
+        except WeiboError as error:
+            logger.warning("Weibo query %r failed: %s", entry["query"], error)
+            stats["failed_queries"] += 1
+            continue
+        for post in posts:
+            url = post["url"]
+            clean_url = canonical(url)
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url) | (Article.canonical_url == clean_url)
+                )
+            )
+            if exists:
+                stats["duplicate"] += 1
+                continue
+            body = (
+                f"{post['text']}\n\n"
+                f"转发 {post['repost']} · 评论 {post['comment']} · 赞 {post['like']}"
+            )
+            try:
+                _article, classified = _store_article(
+                    db, source, topic, "weibo_search",
+                    post["text"][:50], body, url, None,
+                    published=post["published_at"],
+                )
+            except (ValueError, KeyError):
+                stats["failed_items"] += 1
+                continue
+            stats["classified"] += classified
+            stats["inserted"] += 1
+    db.commit()
+    return stats
+
+
+def ingest_miyoushe(db: Session) -> dict[str, int]:
+    topics = sync_topics(db)
+    topic_by_slug = {topic.slug: topic for topic in topics}
+    forums = load_miyoushe_forums()
+    stats = {
+        "forums": len(forums),
+        "failed_forums": 0,
+        "failed_items": 0,
+        "inserted": 0,
+        "duplicate": 0,
+        "classified": 0,
+    }
+    client = MiyousheClient()
+    for forum in forums:
+        topic = topic_by_slug.get(forum["topic"])
+        if topic is None:
+            stats["failed_forums"] += 1
+            continue
+        gids = int(forum["gids"])
+        forum_id = int(forum["forum_id"])
+        game_path = MIYOUSHE_GAME_PATH.get(gids, "ys")
+        source = get_or_create_source(
+            db,
+            {
+                "name": forum["name"],
+                "feed_url": (
+                    f"https://bbs-api.miyoushe.com/post/wapi/getForumPostList"
+                    f"?gids={gids}&forum_id={forum_id}"
+                ),
+                "source_type": forum["source_type"],
+                "trust_tier": forum["trust_tier"],
+            },
+        )
+        try:
+            posts = client.forum_posts(gids, forum_id, limit=MIYOUSHE_POSTS_PER_FORUM)
+        except MiyousheError as error:
+            logger.warning("Miyoushe forum %s/%s failed: %s", gids, forum_id, error)
+            stats["failed_forums"] += 1
+            continue
+        for post in posts:
+            url = f"https://www.miyoushe.com/{game_path}/article/{post['post_id']}"
+            clean_url = canonical(url)
+            exists = db.scalar(
+                select(Article.id).where(
+                    (Article.original_url == url) | (Article.canonical_url == clean_url)
+                )
+            )
+            if exists:
+                stats["duplicate"] += 1
+                continue
+            body = (
+                f"{post['text']}\n\n"
+                f"回复 {post['reply_num']} · 赞 {post['like_num']} · 浏览 {post['view_num']}"
+            ).strip()
+            _article, classified = _store_article(
+                db, source, topic, "miyoushe_forum",
+                post["title"] or post["text"][:50], body, url, post["created_at"],
+            )
+            stats["classified"] += classified
+            stats["inserted"] += 1
+    db.commit()
+    return stats

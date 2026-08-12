@@ -48,6 +48,20 @@ The collector uses the public web API with WBI signing. The comment endpoint all
 `tieba_forums` in `sources.yaml` maps each game to its Baidu Tieba forum (`kw` is the forum name without the 吧 suffix). Each collected thread becomes a `community_post` article whose content is the opening post (floor 1) plus a `热门回复` section of the most-liked replies — the unfiltered player-voice signal that official channels lack.
 
 The collector uses the Tieba client API (`c.tieba.baidu.com`) with the client sign scheme (sorted `k=v` pairs suffixed with `tiebaclient!!!`, MD5-hashed) and anonymous client identity parameters; the web frontend is gated behind a 403 safety check and is not used. Note the thread-content endpoint takes the thread id as `kz`, not `tid`. Threads with fewer than `TIEBA_MIN_REPLIES` replies are skipped as drive-by posts (`skipped_threads` in the ingest report). Requests are throttled to ~2s and each thread is deduplicated by its canonical URL, so repeated ingestion only fetches new threads. For distortion detection the first 30 reply floors of every new thread are stored in `community_comments` (`platform="tieba"`, `user_mid` carries the author portrait id); threads with 30+ stored replies get a `comment_metrics` report like the Bilibili ones below.
+## NGA forums
+
+`nga_forums` in `sources.yaml` maps each game to its NGA board (`fid`, verified against a logged-in session via `thread.php?fid=<fid>&__output=8`). Each collected thread becomes a `community_post` article whose content is the opening post plus a reply-count line; the first reply floors (single read.php page, ~19 floors) are stored in `community_comments` (`platform="nga"`).
+
+The collector uses the legacy web JSON view (`__output=8`, GB18030-encoded, parsed with `strict=False` because payloads embed raw control characters). Anonymous visitors get HTTP 403 "访客不能直接访问", so the lane requires the stored NGA session: when `sessions/nga.json` is missing or expired the lane logs a warning and skips instead of failing. Threads are deduplicated by their full `read.php?tid=<tid>` URL (the thread id lives in the query string, so the query-stripped canonical form cannot be used). Some threads return truncated JSON from read.php; those are still stored (title + reply count) with their floors skipped and counted in `failed_items`.
+
+## Weibo search
+
+`weibo_queries` in `sources.yaml` searches the desktop web search (`https://s.weibo.com/weibo?q=<keyword>`, one page ≈ 20 cards) per game with the stored Weibo session. The m.weibo.cn mobile API returns empty results for this session and is deliberately not used. Each result card becomes a `community_post` article whose content is the post text plus a 转发/评论/赞 stats line; relative timestamps (今天/分钟前/MM月DD日) are parsed best-effort into `published_at`. Cards are deduplicated by their `weibo.com/<uid>/<bid>` URL with query parameters stripped. No per-post comments are fetched. When the session is missing or the search page stops returning result cards, the lane logs a warning and skips.
+
+## Miyoushe forums
+
+`miyoushe_forums` in `sources.yaml` maps a game to a miyoushe board (`gids` identifies the game — 2=原神, 6=崩坏：星穹铁道; `forum_id` the board — the general-chat boards 酒馆=26 and 候车室=52 carry the best player-voice signal). Only miHoYo games exist on miyoushe. The collector uses the anonymous `bbs-api.miyoushe.com` post list; the post `content` JSON string's `describe` field becomes the article body, plus a 回复/赞/浏览 stats line. Posts are deduplicated by their `www.miyoushe.com/<game>/article/<post_id>` URL. No login or per-post comments are involved.
+
 ## Comment distortion detection
 
 For the newest video of each configured account, the collector deep-crawls top-level comments in time order (`BILIBILI_COMMENT_PAGES`, default 25 pages ≈ 500 comments) into `community_comments` and stores a distortion report on the article's `comment_metrics`:

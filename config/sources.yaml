@@ -4,23 +4,23 @@ rss_sources:
   - name: Google News - selected games
     source_type: aggregator
     trust_tier: aggregated
-    query: 'Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2" OR "Honor of Kings" OR "Identity V" OR VALORANT OR "Delta Force"'
+    query: 'Genshin OR "Honkai Star Rail" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2"'
   - name: GameLook via Google News
     source_type: media
     trust_tier: aggregated
-    query: 'site:gamelook.com.cn (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+    query: 'site:gamelook.com.cn (Genshin OR "Honkai Star Rail" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2")'
   - name: YYTV via Google News
     source_type: media
     trust_tier: aggregated
-    query: 'site:yystv.cn (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+    query: 'site:yystv.cn (Genshin OR "Honkai Star Rail" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2")'
   - name: Youxiputao via Google News
     source_type: media
     trust_tier: aggregated
-    query: 'site:youxiputao.com (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+    query: 'site:youxiputao.com (Genshin OR "Honkai Star Rail" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2")'
   - name: 3DM via Google News
     source_type: media
     trust_tier: aggregated
-    query: 'site:3dmgame.com (Genshin OR "Honkai Star Rail" OR "Zenless Zone Zero" OR "Wuthering Waves" OR Arknights OR "Honor of Kings" OR VALORANT OR "Delta Force")'
+    query: 'site:3dmgame.com (Genshin OR "Honkai Star Rail" OR "Wuthering Waves" OR Arknights OR "Girls Frontline 2")'
 official_pages:
   - name: Honkai Star Rail official news
     source_type: official
@@ -52,11 +52,6 @@ bilibili_accounts:
     trust_tier: verified
     topic: honkai-star-rail
     mid: 1340190821
-  - name: Zenless Zone Zero bilibili official
-    source_type: official
-    trust_tier: verified
-    topic: zenless-zone-zero
-    mid: 1636034895
   - name: Wuthering Waves bilibili official
     source_type: official
     trust_tier: verified
@@ -77,26 +72,6 @@ bilibili_accounts:
     trust_tier: verified
     topic: girls-frontline-2-exilium
     mid: 697654195
-  - name: Honor of Kings bilibili official
-    source_type: official
-    trust_tier: verified
-    topic: honor-of-kings
-    mid: 57863910
-  - name: Identity V bilibili official
-    source_type: official
-    trust_tier: verified
-    topic: identity-v
-    mid: 211005705
-  - name: Valorant bilibili official
-    source_type: official
-    trust_tier: verified
-    topic: valorant
-    mid: 147546636
-  - name: Delta Force bilibili official
-    source_type: official
-    trust_tier: verified
-    topic: delta-force
-    mid: 3494376565115651
 # tieba_forums map each game topic to its Baidu Tieba forum (kw is the forum
 # name without the 吧 suffix). Threads become community articles whose content
 # is the opening post plus a 热门回复 section; the first reply floors of each
@@ -112,11 +87,6 @@ tieba_forums:
     trust_tier: unverified
     topic: honkai-star-rail
     kw: 崩坏星穹铁道
-  - name: 绝区零吧
-    source_type: community
-    trust_tier: unverified
-    topic: zenless-zone-zero
-    kw: 绝区零
   - name: 鸣潮吧
     source_type: community
     trust_tier: unverified
@@ -137,23 +107,86 @@ tieba_forums:
     trust_tier: unverified
     topic: girls-frontline-2-exilium
     kw: 少女前线2
-  - name: 王者荣耀吧
+# nga_forums map each game topic to its NGA board (fid, verified with a logged-in
+# session via thread.php?fid=<fid>&__output=8). Threads become community
+# articles; the first reply floors are stored in community_comments.
+nga_forums:
+  - name: NGA 原神
     source_type: community
     trust_tier: unverified
-    topic: honor-of-kings
-    kw: 王者荣耀
-  - name: 第五人格吧
+    topic: genshin-impact
+    fid: 650
+  - name: NGA 崩坏：星穹铁道
     source_type: community
     trust_tier: unverified
-    topic: identity-v
-    kw: 第五人格
-  - name: 无畏契约吧
+    topic: honkai-star-rail
+    fid: 818
+  - name: NGA 鸣潮
     source_type: community
     trust_tier: unverified
-    topic: valorant
-    kw: 无畏契约
-  - name: 三角洲行动吧
+    topic: wuthering-waves
+    fid: 854
+  - name: NGA 明日方舟
     source_type: community
     trust_tier: unverified
-    topic: delta-force
-    kw: 三角洲行动
+    topic: arknights
+    fid: -34587507
+  - name: NGA 明日方舟终末地
+    source_type: community
+    trust_tier: unverified
+    topic: arknights-endfield
+    fid: 846
+  - name: NGA 少前2：追放
+    source_type: community
+    trust_tier: unverified
+    topic: girls-frontline-2-exilium
+    fid: -195362
+# weibo_queries search the desktop web search (s.weibo.com) per game; each result
+# card becomes a community article. Queries avoid overly generic terms.
+weibo_queries:
+  - name: 微博搜索 原神
+    source_type: community
+    trust_tier: unverified
+    topic: genshin-impact
+    query: 原神
+  - name: 微博搜索 崩坏星穹铁道
+    source_type: community
+    trust_tier: unverified
+    topic: honkai-star-rail
+    query: 崩坏星穹铁道
+  - name: 微博搜索 鸣潮
+    source_type: community
+    trust_tier: unverified
+    topic: wuthering-waves
+    query: 鸣潮
+  - name: 微博搜索 明日方舟
+    source_type: community
+    trust_tier: unverified
+    topic: arknights
+    query: 明日方舟
+  - name: 微博搜索 明日方舟终末地
+    source_type: community
+    trust_tier: unverified
+    topic: arknights-endfield
+    query: 明日方舟终末地
+  - name: 微博搜索 少女前线2
+    source_type: community
+    trust_tier: unverified
+    topic: girls-frontline-2-exilium
+    query: 少女前线2
+# miyoushe_forums use the anonymous bbs-api. gids identifies the game (2=原神,
+# 6=崩坏：星穹铁道); forum_id picks the general-chat board (酒馆 / 候车室), the
+# best player-voice signal. Non-miHoYo games have no miyoushe board.
+miyoushe_forums:
+  - name: 米游社 原神酒馆
+    source_type: community
+    trust_tier: unverified
+    topic: genshin-impact
+    gids: 2
+    forum_id: 26
+  - name: 米游社 崩铁候车室
+    source_type: community
+    trust_tier: unverified
+    topic: honkai-star-rail
+    gids: 6
+    forum_id: 52

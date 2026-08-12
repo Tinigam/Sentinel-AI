@@ -9,8 +9,17 @@ from app.core.config import get_settings
 from app.db import get_db
 from app.models.entities import Article, ArticleSentiment, ArticleTopic, Topic
 from app.services.indexing import index_relevant_articles
-from app.services.ingestion import ingest_bilibili, ingest_official_pages, ingest_rss, ingest_tieba
+from app.services.ingestion import (
+    ingest_bilibili,
+    ingest_miyoushe,
+    ingest_nga,
+    ingest_official_pages,
+    ingest_rss,
+    ingest_tieba,
+    ingest_weibo,
+)
 from app.services.retrieval import hybrid_search
+from app.services.session_auth import SITES, check_session
 from app.schemas import AskRequest
 from app.services.rag import answer_question
 from app.services.sentiment import classify_unprocessed, sentiment_model_name
@@ -72,6 +81,11 @@ def topics(db: Session = Depends(get_db)) -> list[dict[str, str]]:
         {"slug": item.slug, "display_name": item.display_name}
         for item in db.scalars(select(Topic).where(Topic.is_active.is_(True))).all()
     ]
+
+
+@router.get("/sources/sessions")
+def source_sessions() -> list[dict[str, str]]:
+    return [check_session(site) for site in SITES]
 
 
 @router.get("/news")
@@ -244,6 +258,9 @@ def ingest(x_ingest_key: str | None = Header(default=None), db: Session = Depend
         "official_pages": ingest_official_pages(db),
         "bilibili": ingest_bilibili(db),
         "tieba": ingest_tieba(db),
+        "nga": ingest_nga(db),
+        "weibo": ingest_weibo(db),
+        "miyoushe": ingest_miyoushe(db),
     }
 
 
